@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# CatBoost training artifacts
+catboost_info/
+
+# IDE settings
+.vscode/
+.idea/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Large data files (download from Kaggle)
+data/MMasseyOrdinals.csv
+
+# Model artifacts (regenerable)
+models/*.pkl
+models/*.cbm
+models/*.json
+models/*.xgb
+
+# HTML exports
+*.html
