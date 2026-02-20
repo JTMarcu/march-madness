@@ -24,8 +24,8 @@ Thumbs.db
 data/
 *.zip
 
-# Large generated CSVs in archive
-archive/**/*.csv
+# Archive — old notebooks from prior years (keep locally, not in git)
+archive/
 
 # Model artifacts (regenerable)
 models/*.pkl
