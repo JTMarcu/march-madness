@@ -4,7 +4,8 @@
 Kaggle competition: **March Machine Learning Mania 2026**  
 Goal: Predict win probabilities for every possible matchup in both the **Men's** and **Women's** 2026 NCAA basketball tournaments.  
 Metric: **Mean Squared Error** (Brier score) — lower is better.  
-Prize: $50,000 pool · Awards Points & Medals.
+Prize: $50,000 pool · Awards Points & Medals.  
+GitHub: `JTMarcu/march-madness` (public)
 
 ## Competition Rules (Key Points)
 - Submit **P(Team1 wins)** for every possible `Season_Team1ID_Team2ID` pair where `Team1ID < Team2ID`.
@@ -27,20 +28,17 @@ Madness/
 │   ├── Cities.csv, Conferences.csv   # Supplementary data
 │   └── Processed_*.csv              # Intermediate processed data (regenerable)
 ├── notebooks/
-│   ├── 01_eda.ipynb                  # Exploratory data analysis
-│   ├── 02_feature_engineering.ipynb  # Feature pipeline
-│   ├── 03_modeling.ipynb             # Model training & validation
-│   ├── 04_submission.ipynb           # Generate final submission CSV
-│   └── 05_bracket_analysis.ipynb     # Post-prediction bracket explorer
+│   ├── 03_modeling.ipynb             # Original 3-phase pipeline (reference)
+│   └── 04_refined.ipynb             # PRIMARY — experiment tracking + multi-year validation
 ├── src/                              # Reusable Python modules
 │   ├── __init__.py
-│   ├── data_loader.py                # Load & merge raw CSVs
-│   ├── features.py                   # Feature engineering functions
-│   ├── models.py                     # Model training & prediction
-│   └── utils.py                      # Helpers (team name lookup, plotting, etc.)
+│   ├── data_loader.py                # Load & merge raw CSVs (men + women)
+│   ├── features.py                   # Feature engineering pipeline
+│   ├── models.py                     # Model training & prediction helpers
+│   └── utils.py                      # Team lookups, submission generation, plotting
 ├── models/                           # Saved trained models (.pkl, .cbm, .json)
 ├── output/                           # Submission CSVs
-├── archive/                          # Old notebooks from prior years (reference only)
+├── old/                              # Old notebooks from prior years (reference only)
 ├── results/                          # Evaluation results, plots
 └── README.md
 ```
@@ -56,14 +54,15 @@ Madness/
 | `MNCAATourneyCompactResults.csv` | Tournament scores only (1985–current) | Same as above |
 | `MNCAATourneySeeds.csv` | Tournament seeds (1985–current) | Season, Seed (e.g., "W01"), TeamID |
 | `MNCAATourneySlots.csv` | Bracket structure | Season, Slot, StrongSeed, WeakSeed |
-| `MMasseyOrdinals.csv` | 3rd-party ranking systems | Season, RankingDayNum, SystemName, TeamID, OrdinalRank |
+| `MMasseyOrdinals.csv` | 3rd-party ranking systems (**men only**) | Season, RankingDayNum, SystemName, TeamID, OrdinalRank |
 | `MTeamCoaches.csv` | Coach history | Season, TeamID, FirstDayNum, LastDayNum, CoachName |
 | `MTeamConferences.csv` | Conference memberships | Season, TeamID, ConfAbbrev |
 | `MTeams.csv` | Team ID ↔ name mapping | TeamID, TeamName |
 
 ### Women's Data (prefix `W`)
 Same structure as men's data. Women's detailed results start from **2010**.  
-Women's TeamIDs are in the **3xxx** range.
+Women's TeamIDs are in the **3xxx** range.  
+**Note:** Massey Ordinals are NOT available for women's teams — use seed-based proxies instead.
 
 ### Supplementary
 | File | Description |
@@ -75,9 +74,9 @@ Women's TeamIDs are in the **3xxx** range.
 ## Coding Conventions
 
 ### Python & Libraries
-- **Python 3.11+** with venv at `.venv/`
-- Primary libraries: `pandas`, `numpy`, `scikit-learn`, `xgboost`, `catboost`, `lightgbm`, `scipy`, `matplotlib`, `seaborn`
-- Use `polars` for large data operations when performance matters
+- **Python 3.11** at `C:\Users\JonMa\AppData\Local\Programs\Python\Python311\python.exe`
+- Virtual env at `.venv/`
+- Primary libraries: `pandas`, `numpy`, `scikit-learn`, `xgboost`, `lightgbm`, `catboost`, `scipy`, `statsmodels`, `matplotlib`, `seaborn`
 - Type hints on all function signatures in `src/` modules
 - Docstrings (Google style) on all public functions
 
@@ -88,98 +87,192 @@ Women's TeamIDs are in the **3xxx** range.
 4. **Sort TeamIDs** in matchup pairs — always ensure `Team1ID < Team2ID` to match submission format.
 5. **Combine men's and women's** data into a single training set (they share the same statistical features).
 6. Compute **per-game averages** for all box score stats, not totals.
-7. Use **feature differences** (Team1_stat − Team2_stat) rather than raw per-team features — this cuts feature count in half and the model learns relative strength.
+7. Use **feature differences** (`Diff_X = T1_X − T2_X`) rather than raw per-team features — this cuts feature count in half and the model learns relative strength.
+8. **Massey Ordinals are men-only** — women's teams have no Massey data. Never fill women's missing Massey values with 0 (it misleads the model). Either add an `is_mens` flag, train separate M/W models, or exclude Massey entirely.
 
-### Feature Engineering (Proven Features)
-These features have been validated in prior years:
+## src/ Module API Reference
 
-| Feature | Formula | Category |
-|---------|---------|----------|
-| WinPct | Wins / GamesPlayed | Record |
-| AvgPointsFor | Mean points scored | Scoring |
-| AvgPointsAgainst | Mean points allowed | Defense |
-| ScoreMargin | PointsFor − PointsAgainst | Combined |
-| FGP | FGM / FGA | Shooting |
-| FG3P | FGM3 / FGA3 | Shooting |
-| FTP | FTM / FTA | Shooting |
-| AvgOR | Mean offensive rebounds | Rebounding |
-| AvgDR | Mean defensive rebounds | Rebounding |
-| AvgTO | Mean turnovers | Ball control |
-| OffEff | (Score / Possessions) × 100 | Efficiency |
-| DefEff | (OppScore / Possessions) × 100 | Efficiency |
-| Possessions | FGA − OR + TO + 0.475 × FTA | Tempo |
-| SeedNum | Parsed from seed string (1–16) | Seeding |
-| Seed_diff | Team1Seed − Team2Seed | Seeding |
-| TeamQuality | GLM coefficient (logistic reg on team IDs) | Advanced |
-| Last14DaysWinRatio | Win% in final 14 days of regular season | Momentum |
-
-### Features to Add for 2026 (Improvements)
-- **Massey Ordinals**: Use top ranking systems (POM, SAG, MOR, etc.) as features or ensemble weights.
-- **Conference strength**: Average win% of conference opponents.
-- **Coach experience**: Years coaching + tournament appearances.
-- **Travel distance**: Euclidean distance from team city to game city.
-- **Strength of Schedule (SOS)**: Average opponent win%.
-- **Adjusted efficiency margins** (KenPom-style): Tempo-free offensive/defensive ratings.
-- **Recency weighting**: Weight recent games more heavily.
-- **Historical tournament performance**: Team's historical tournament win rate.
-
-### Modeling Guidelines
-1. **Validation strategy**: Train on seasons 2010–(current−2), validate on season (current−1). Never leak tournament data from the prediction season.
-2. **Cross-validation**: Use `GroupKFold` with `Season` as the group — prevents temporal leakage.
-3. **Models to ensemble**:
-   - XGBoost (regression on point differential → calibrate to probability)
-   - CatBoost (handles categoricals natively)
-   - LightGBM (fast, good with ordinals)
-   - Random Forest (robust baseline)
-4. **Calibration**: After training, calibrate probabilities using `CalibratedClassifierCV` or `scipy.interpolate.UnivariateSpline` on validation set.
-5. **Clip predictions**: Clip final probabilities to `[0.025, 0.975]` — never predict absolute certainty.
-6. **Seed-based priors**: For extreme seed mismatches (1 vs 16), blend model predictions with historical seed-based win rates.
-7. **Log loss during training, MSE for final evaluation** — they optimize similar things but MSE is the competition metric.
-
-### Submission Generation
+### `data_loader.py` — Data Loading
+All functions accept an optional `data_dir` parameter (defaults to `data/`).
 ```python
-# Standard submission generation pattern
-submission = sample_sub.copy()
-submission['Pred'] = submission['ID'].apply(lambda x: predict_matchup(x, model, features))
-submission['Pred'] = submission['Pred'].clip(0.025, 0.975)
-submission.to_csv('output/submission_2026.csv', index=False)
+load_regular_season()      → pd.DataFrame   # Men + Women detailed results (2010+)
+load_tourney_results()     → pd.DataFrame   # Men + Women tournament detailed results
+load_tourney_seeds()       → pd.DataFrame   # Seeds with parsed 'seed' int column
+load_compact_results()     → pd.DataFrame   # Compact results (scores only)
+load_teams()               → pd.DataFrame   # TeamID ↔ TeamName
+load_team_conferences()    → pd.DataFrame   # Conference memberships
+load_massey_ordinals()     → pd.DataFrame   # Massey rankings (MEN ONLY)
+load_coaches()             → pd.DataFrame   # Coach history
+load_sample_submission(stage=1|2) → pd.DataFrame  # Kaggle submission template
 ```
+
+### `features.py` — Feature Engineering Pipeline
+All feature functions are keyed on `(Season, TeamID)`. The pipeline flows:
+
+```
+Raw data → prepare_game_data() → compute_*() functions → build_team_features()
+                                                              ↓
+Tournament results → create_matchup_df(tourney, team_features)
+                              ↓
+                     compute_difference_features(matchup_df) → Diff_* columns
+```
+
+Key functions:
+```python
+prepare_game_data(df)                    → symmetric T1/T2 rows (each game = 2 rows)
+compute_season_stats(game_data)          → per-game averages: FGM, Opp_FGM, Score, etc.
+compute_win_pct(game_data)               → WinPct, Games
+compute_efficiency(game_data)            → OffEff, DefEff, Possessions
+compute_last14_momentum(game_data)       → win_ratio_14d
+compute_team_quality(game_data, seeds)   → quality (L2-regularized GLM + z-score)
+compute_massey_features(massey_raw)      → Massey_POM, Massey_SAG, etc. (MEN ONLY)
+build_team_features(stats, winpct, eff, momentum, seeds, quality=None, massey=None)
+                                          → single table keyed on (Season, TeamID)
+create_matchup_df(matchups, team_features) → T1_* and T2_* columns via join
+compute_difference_features(matchup_df)  → (df_with_Diff_cols, list_of_diff_col_names)
+```
+
+**Column naming convention:**
+- Team stats: `FGM`, `FGA`, `Score`, `PointDiff`
+- Opponent stats: `Opp_FGM`, `Opp_FGA`, `Opp_Score`
+- After matchup merge: `T1_FGM`, `T2_FGM`
+- After difference: `Diff_FGM` (= T1_FGM − T2_FGM)
+
+### `models.py` — Training & Prediction
+```python
+DEFAULT_XGB_PARAMS           # Conservative XGB params (eta=0.02, max_depth=3, etc.)
+cauchyobj(preds, dtrain)     → Cauchy loss gradient/hessian for XGB
+train_xgb_cv(X, y, seasons)  → models, scores, spline_calibrators
+train_xgb_final(X, y)       → single xgb model
+fit_spline_calibrators(preds, labels, n_bins=200) → dict of spline functions
+predict_probabilities(X, models, calibrators) → calibrated predictions
+train_rf_baseline(X, y)     → RandomForestClassifier
+evaluate_predictions(y_true, y_pred) → dict with MSE, log_loss, accuracy
+```
+
+### `utils.py` — Helpers
+```python
+team_id(name, gender='M'|'W'|None)  # "Duke" → 1181 (M) or 3181 (W)
+team_name(tid)                       # 1181 → "Duke"
+parse_submission_ids(sample_sub)     # Extract Season, T1_TeamID, T2_TeamID from ID col
+generate_submission(preds, sample_sub, path, clip=[0.025, 0.975])
+lookup_matchup(t1_name, t2_name, submission_df, gender='M')
+plot_feature_importance(model, feature_names)
+plot_calibration(y_true, y_pred)
+valid_seasons(min_season=2003, max_season=2026)  # Excludes 2020
+```
+
+**`team_id()` behavior:** Tries exact match first, then case-insensitive exact, then partial substring. Use `gender='M'` or `gender='W'` to disambiguate (e.g., Duke has both M and W teams). Note: "UConn" is stored as "Connecticut" in the data.
+
+## Feature Importance (Empirically Validated)
+
+Ranked by absolute importance from 2025 validation (logistic regression coefficients):
+
+| Rank | Feature | Coefficient | Impact |
+|------|---------|-------------|--------|
+| 1 | `Diff_seed` | −1.10 | **Dominant** — lower seed = higher win prob |
+| 2 | `Diff_PointDiff` | +0.70 | Point differential in regular season |
+| 3 | `Diff_OffEff` | +0.40 | Offensive efficiency (points per possession) |
+| 4 | `Diff_WinPct` | +0.35 | Win percentage |
+| 5 | `Diff_DefEff` | −0.30 | Defensive efficiency (lower = better) |
+| 6 | `Diff_win_ratio_14d` | +0.20 | Late-season momentum |
+| 7 | `Diff_quality` | +0.15 | GLM team quality metric |
+
+**Key insight:** The top 4 features (`Diff_seed`, `Diff_PointDiff`, `Diff_OffEff`, `Diff_WinPct`) capture nearly all the signal. Additional features provide diminishing returns and increase overfitting risk on ~130 tournament games per year.
+
+## Modeling Guidelines (Updated with 2025 Results)
+
+### Critical Finding: Simple Models Win
+With only **~1,962 total tournament games** (2010–2025, M+W), complex models overfit:
+- **Logistic Regression: MSE = 0.1447** (BEST)
+- XGBoost classifier: MSE = 0.1529
+- Full ensemble: MSE = 0.1523
+
+**Rule: Start with logistic regression on 4–6 features. Only add complexity if it beats LogReg on ALL holdout years.**
+
+### Validation Strategy
+1. **Multi-year holdout** — validate on 2023, 2024, AND 2025 (not just one year). A change only counts if it helps on **at least 2 of 3** holdout years.
+2. Train on all years before the holdout year (no future leakage).
+3. **GroupKFold with Season** as group for cross-validation if needed.
+4. Final model: train on ALL 2010–2025 data, predict 2026.
+
+### Model Selection Hierarchy
+1. **LogisticRegression** (C=1.0) on top 4–6 diff features → strong baseline
+2. **Shallow XGBoost** (max_depth=2, min_child_weight=30, gamma=5) → test non-linear interactions
+3. **LightGBM** (num_leaves=8, max_depth=2) → alternative to XGBoost
+4. **Simple average of LogReg + shallow XGB** → only if both models are individually good
+
+### Calibration & Clipping
+- Clip final predictions to `[0.025, 0.975]` — never predict absolute certainty.
+- Spline calibration on MSE metric is fragile with small data — prefer well-calibrated models (LogReg is already calibrated).
+- For tree models, use Platt scaling or isotonic regression.
+
+### GLM Team Quality
+The `compute_team_quality()` function uses L2-regularized logistic regression on team indicators, then z-score normalizes. Quality values should range approximately [-3, +3]. If values exceed [-10, 10], something is wrong — check the regularization parameter (currently `alpha=0.1, L1_wt=0.0`).
+
+### Massey Ordinals
+- Only available for **men's teams**
+- Systems used: POM, SAG, MOR, DOL, COL (top-5 most complete systems)
+- For combined M+W models, either: (a) add `is_mens` flag, (b) train separate models, or (c) exclude Massey entirely
+- **Never fill women's Massey values with 0** — it biases predictions
+
+## Experiment Tracking Methodology
+
+Use `notebooks/04_refined.ipynb` for systematic experimentation:
+
+```python
+# Every experiment follows this pattern:
+run_experiment(
+    name='Top4 (LR)',
+    description='LogReg on seed + PointDiff + OffEff + WinPct',
+    feature_names=['Diff_seed', 'Diff_PointDiff', 'Diff_OffEff', 'Diff_WinPct'],
+    matchup_df=tourney_f,
+    model_type='logreg',  # or 'xgb', 'lgbm'
+)
+# This trains on all data except each holdout year, reports MSE for 2023/2024/2025
+
+show_leaderboard()  # See all experiments ranked by average MSE
+```
+
+### Adding New Experiments
+1. Compute any new features in `src/features.py`
+2. Add a cell in `04_refined.ipynb` calling `run_experiment()`
+3. Check the leaderboard — does it beat the current best on 2+ holdout years?
+4. If yes, update `FINAL_FEATURES` and `FINAL_MODEL` in the submission cell
 
 ## Workflow for 2026
 
-### Phase 1: Data Update (When Kaggle releases 2026 data)
-1. Download fresh CSVs from Kaggle into `data/`
-2. Verify 2025 tournament results are now in the data
-3. Verify 2026 regular season data is included
-4. Update `SampleSubmission*.csv` files for 2026
+### Phase 1: Data Update
+1. `kaggle competitions download -c march-machine-learning-mania-2026 -p data/`
+2. Verify 2025 tournament results and 2026 regular season data present
+3. Update `SampleSubmission*.csv` files for 2026
 
-### Phase 2: Feature Engineering
-1. Run `src/features.py` to generate team stats for all seasons including 2026
-2. Verify feature distributions haven't shifted dramatically
-3. Add any new features (Massey ordinals, coach data, etc.)
+### Phase 2: Feature Engineering & Experiments
+1. Run `04_refined.ipynb` from top — it automatically loads data and builds features
+2. Run all experiment cells — the leaderboard shows what works
+3. Try new feature/model combos as additional experiments
+4. Keep what beats the baseline on 2+ holdout years
 
-### Phase 3: Model Training
-1. Train on 2010–2024, validate on 2025
-2. Evaluate MSE on 2025 validation (we know actual results now)
-3. Tune hyperparameters
-4. Train ensemble on 2010–2025, predict 2026
-
-### Phase 4: Submission
-1. Generate predictions for all 2026 matchups
-2. Calibrate and clip probabilities
-3. Sanity check: Do top seeds have high win probabilities?
-4. Generate final `output/submission_2026.csv`
+### Phase 3: Final Submission
+1. Set `FINAL_FEATURES`, `FINAL_MODEL`, `FINAL_PARAMS` in the submission cell
+2. Model trains on ALL 2010–2025 data
+3. Generates `output/submission_refined.csv`
+4. Sanity-check marquee matchups
 
 ## Previous Year Results
-- **2025 competition**: Used RandomForest with 13 difference features. Basic feature engineering with offensive/defensive efficiency. No seeds, no Massey ordinals, no ensemble.
-- **2023 competition (paris-madness-2023.ipynb)**: Used XGBoost regression on point differential with custom Cauchy loss, GLM team quality metric, seed features, spline probability calibration. This was the most sophisticated approach.
+- **2025 competition**: RandomForest + 13 diff features. No seeds, no Massey, no ensemble. Basic approach.
+- **2023 competition** (`old/paris-madness-2023.ipynb`): XGBoost regression with Cauchy loss, GLM quality, seed features, spline calibration. Most sophisticated prior approach.
+- **2026 iteration 1** (`notebooks/03_modeling.ipynb`): 3-phase pipeline. LogReg MSE=0.1447 beat XGBoost (0.1529) and ensemble (0.1523). GLM quality was overflowing (fixed). Massey handling was wrong for women (fixed).
 
-## Key Learnings from Prior Years
-1. Feature differences >>> raw features (halves feature count, better signal)
-2. Seed information is extremely predictive — always include it
-3. Point differential regression → probability calibration outperforms direct classification
-4. Overconfident predictions destroy MSE scores — always clip/calibrate
-5. Ensemble models beat any single model
-6. Team quality metrics (GLM/Elo) add significant signal beyond box score stats
-7. Recent form (last 14 days) captures injury/momentum effects
-8. Don't over-engineer women's vs men's differences — a combined model works fine
+## Key Learnings (Empirically Validated)
+1. **Simple logistic regression beats complex models** on ~2K tournament games — the dataset is too small for deep trees
+2. **Seed difference is the single most important feature** (coeff −1.10) — the selection committee already encodes team strength
+3. **Top 4 features capture nearly all signal**: seed, point diff, offensive efficiency, win%
+4. **Feature differences >>> raw features** — halves feature count, better signal
+5. **Multi-year validation is essential** — a model that looks great on 2025 alone may have gotten lucky
+6. **Overconfident predictions destroy MSE** — always clip to [0.025, 0.975]
+7. **GLM team quality must be regularized** — unregularized GLM on team indicators overflows (1e16 values)
+8. **Massey ordinals are men-only** — filling women's data with 0 is worse than excluding them
+9. **Combined M+W model works fine** — don't over-engineer gender differences (except for Massey)
+10. **Point differential → probability calibration outperforms direct classification** (but LogReg is simpler and nearly as good)
+11. **Every new feature/model must earn its place** — test on 3 holdout years, keep only if it helps 2+ of them

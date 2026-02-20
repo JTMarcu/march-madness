@@ -45,21 +45,43 @@ def team_name(team_id: int) -> str:
     return f"Unknown ({team_id})"
 
 
-def team_id(name: str) -> Optional[int]:
-    """Look up a team's ID by name (case-insensitive partial match).
+def team_id(name: str, gender: Optional[str] = None) -> Optional[int]:
+    """Look up a team's ID by name.
+
+    Tries exact match first, then case-insensitive exact, then partial.
+    Use gender='M' or 'W' to disambiguate men's vs women's teams.
 
     Args:
-        name: Team name or partial name.
+        name: Team name (exact preferred, partial OK).
+        gender: 'M' for men (1xxx IDs), 'W' for women (3xxx IDs), or None.
 
     Returns:
         TeamID or None if not found.
     """
     teams = get_teams()
+
+    # Filter by gender if specified
+    if gender == "M":
+        teams = teams[teams["TeamID"] < 3000]
+    elif gender == "W":
+        teams = teams[teams["TeamID"] >= 3000]
+
+    # 1. Exact match
+    exact = teams[teams["TeamName"] == name]
+    if len(exact) == 1:
+        return exact["TeamID"].values[0]
+
+    # 2. Case-insensitive exact match
+    ci_exact = teams[teams["TeamName"].str.lower() == name.lower()]
+    if len(ci_exact) == 1:
+        return ci_exact["TeamID"].values[0]
+
+    # 3. Partial match (contains)
     mask = teams["TeamName"].str.contains(name, case=False, na=False)
     if mask.sum() == 1:
         return teams.loc[mask, "TeamID"].values[0]
     if mask.sum() > 1:
-        print(f"Multiple matches for '{name}':")
+        print(f"Multiple matches for '{name}' — use exact name or gender='M'/'W':")
         print(teams.loc[mask, ["TeamID", "TeamName"]].to_string(index=False))
         return None
     return None

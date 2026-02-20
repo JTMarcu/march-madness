@@ -243,16 +243,26 @@ def compute_team_quality(
         if len(data) == 0:
             return pd.DataFrame(columns=["Season", "TeamID", "quality"])
         try:
+            # Use regularized GLM (L2 penalty prevents coefficient explosion)
             glm = sm.GLM.from_formula(
                 formula="win ~ -1 + T1_TeamID + T2_TeamID",
                 data=data,
                 family=sm.families.Binomial(),
-            ).fit()
-            quality = pd.DataFrame(glm.params).reset_index()
-            quality.columns = ["param", "quality"]
+            ).fit_regularized(alpha=0.1, L1_wt=0.0, maxiter=100)
+            quality = pd.DataFrame({"param": glm.params.index, "quality": glm.params.values})
+            quality["quality"] = quality["quality"].astype(float)
             quality = quality.loc[quality["param"].str.startswith("T1_TeamID")]
-            quality["TeamID"] = quality["param"].str.extract(r"T1_TeamID\[T\.(\d+)\]")[0].astype(int)
+            # Extract team ID — handles both [1103] and [T.1103] formats
+            quality["TeamID"] = (
+                quality["param"]
+                .str.extract(r"T1_TeamID\[(?:T\.)?(\d+)\]")[0]
+                .astype(int)
+            )
             quality["Season"] = season
+            # Normalize to z-scores so quality is comparable across seasons
+            q = quality["quality"]
+            if q.std() > 0:
+                quality["quality"] = (q - q.mean()) / q.std()
             return quality[["Season", "TeamID", "quality"]].reset_index(drop=True)
         except Exception:
             return pd.DataFrame(columns=["Season", "TeamID", "quality"])
