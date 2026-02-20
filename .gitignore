@@ -20,8 +20,12 @@ catboost_info/
 Thumbs.db
 .DS_Store
 
-# Large data files (download from Kaggle)
-data/MMasseyOrdinals.csv
+# Data files (download from Kaggle — see setup.py)
+data/
+*.zip
+
+# Large generated CSVs in archive
+archive/**/*.csv
 
 # Model artifacts (regenerable)
 models/*.pkl
