@@ -65,31 +65,54 @@ def prepare_game_data(df: pd.DataFrame) -> pd.DataFrame:
 # Season-level team statistics
 # ---------------------------------------------------------------------------
 
-BOXSCORE_COLS = [
-    "T1_FGM", "T1_FGA", "T1_FGM3", "T1_FGA3",
-    "T1_OR", "T1_Ast", "T1_TO", "T1_Stl", "T1_PF",
-    "T2_FGM", "T2_FGA", "T2_FGM3", "T2_FGA3",
-    "T2_OR", "T2_Ast", "T2_TO", "T2_Stl", "T2_Blk",
-    "PointDiff",
+# Team's own stats (from T1 perspective in symmetric data)
+TEAM_STAT_COLS = [
+    "T1_Score", "T1_FGM", "T1_FGA", "T1_FGM3", "T1_FGA3",
+    "T1_FTM", "T1_FTA", "T1_OR", "T1_DR", "T1_Ast",
+    "T1_TO", "T1_Stl", "T1_Blk", "T1_PF",
+]
+
+# Opponent stats (from T2 perspective)
+OPP_STAT_COLS = [
+    "T2_Score", "T2_FGM", "T2_FGA", "T2_FGM3", "T2_FGA3",
+    "T2_FTM", "T2_FTA", "T2_OR", "T2_DR", "T2_Ast",
+    "T2_TO", "T2_Stl", "T2_Blk", "T2_PF",
 ]
 
 
 def compute_season_stats(regular_data: pd.DataFrame) -> pd.DataFrame:
     """Compute per-team per-season average box score statistics.
 
+    Averages the team's own stats AND opponent stats separately.
+    Opponent columns are renamed with 'Opp_' prefix to avoid confusion.
+
     Args:
         regular_data: Output of prepare_game_data on regular season results.
 
     Returns:
-        DataFrame indexed by (Season, T1_TeamID) with mean stats.
+        DataFrame with Season, TeamID, and per-game averages for
+        the team's stats (FGM, FGA, ...) and opponent stats (Opp_FGM, ...).
     """
+    agg_cols = TEAM_STAT_COLS + OPP_STAT_COLS + ["PointDiff"]
+    # Only use columns that exist in the data
+    agg_cols = [c for c in agg_cols if c in regular_data.columns]
+
     stats = (
         regular_data
-        .groupby(["Season", "T1_TeamID"])[BOXSCORE_COLS]
+        .groupby(["Season", "T1_TeamID"])[agg_cols]
         .mean()
         .reset_index()
     )
-    stats.columns = ["".join(col).strip() for col in stats.columns]
+
+    # Clean column names: T1_Score -> Score, T2_Score -> Opp_Score, etc.
+    rename = {"T1_TeamID": "TeamID"}
+    for col in stats.columns:
+        if col.startswith("T1_"):
+            rename[col] = col[3:]  # T1_FGM -> FGM
+        elif col.startswith("T2_"):
+            rename[col] = "Opp_" + col[3:]  # T2_FGM -> Opp_FGM
+    stats = stats.rename(columns=rename)
+
     return stats
 
 
@@ -100,7 +123,7 @@ def compute_win_pct(regular_data: pd.DataFrame) -> pd.DataFrame:
         regular_data: Output of prepare_game_data.
 
     Returns:
-        DataFrame with Season, T1_TeamID, WinPct.
+        DataFrame with Season, TeamID, WinPct.
     """
     regular_data = regular_data.copy()
     regular_data["win"] = (regular_data["PointDiff"] > 0).astype(int)
@@ -110,6 +133,7 @@ def compute_win_pct(regular_data: pd.DataFrame) -> pd.DataFrame:
         .mean()
         .reset_index(name="WinPct")
     )
+    win_pct = win_pct.rename(columns={"T1_TeamID": "TeamID"})
     return win_pct
 
 
@@ -123,7 +147,7 @@ def compute_efficiency(regular_data: pd.DataFrame) -> pd.DataFrame:
         regular_data: Output of prepare_game_data.
 
     Returns:
-        DataFrame with Season, T1_TeamID, OffEff, DefEff.
+        DataFrame with Season, TeamID, OffEff, DefEff.
     """
     df = regular_data.copy()
     df["T1_Poss"] = df["T1_FGA"] - df["T1_OR"] + df["T1_TO"] + 0.475 * df["T1_FTA"]
@@ -137,6 +161,7 @@ def compute_efficiency(regular_data: pd.DataFrame) -> pd.DataFrame:
         .mean()
         .reset_index()
     )
+    eff = eff.rename(columns={"T1_TeamID": "TeamID"})
     return eff
 
 
@@ -152,7 +177,7 @@ def compute_last14_momentum(regular_data: pd.DataFrame, day_cutoff: int = 118) -
         day_cutoff: DayNum threshold (games after this day).
 
     Returns:
-        DataFrame with Season, T1_TeamID, win_ratio_14d.
+        DataFrame with Season, TeamID, win_ratio_14d.
     """
     late = regular_data.loc[regular_data["DayNum"] > day_cutoff].copy()
     late["win"] = (late["PointDiff"] > 0).astype(int)
@@ -161,6 +186,7 @@ def compute_last14_momentum(regular_data: pd.DataFrame, day_cutoff: int = 118) -
         .mean()
         .reset_index(name="win_ratio_14d")
     )
+    momentum = momentum.rename(columns={"T1_TeamID": "TeamID"})
     return momentum
 
 
@@ -176,7 +202,7 @@ def compute_team_quality(
     """Compute GLM-based team quality for tournament teams.
 
     Fits a logistic regression with team IDs as predictors on regular season
-    win/loss outcomes, restricted to teams that appear in the tournament seeds.
+    win/loss outcomes, restricted to games between tournament teams.
     The resulting coefficients measure each team's quality.
 
     Args:
@@ -186,25 +212,27 @@ def compute_team_quality(
                  available seasons in seeds (excluding 2020).
 
     Returns:
-        DataFrame with TeamID, quality, Season columns.
+        DataFrame with Season, TeamID, quality columns.
     """
-    # Filter to games involving tournament teams
     effects = regular_data[["Season", "T1_TeamID", "T2_TeamID", "PointDiff"]].copy()
     effects["T1_TeamID"] = effects["T1_TeamID"].astype(str)
     effects["T2_TeamID"] = effects["T2_TeamID"].astype(str)
     effects["win"] = (effects["PointDiff"] > 0).astype(int)
 
-    # Build mart of all tournament team pairs
-    march_madness = pd.merge(
-        seeds[["Season", "TeamID"]],
-        seeds[["Season", "TeamID"]],
-        on="Season",
-    )
-    march_madness.columns = ["Season", "T1_TeamID", "T2_TeamID"]
-    march_madness["T1_TeamID"] = march_madness["T1_TeamID"].astype(str)
-    march_madness["T2_TeamID"] = march_madness["T2_TeamID"].astype(str)
+    # Keep only games where BOTH teams made the tournament
+    tourney_teams = seeds[["Season", "TeamID"]].copy()
+    tourney_teams["TeamID"] = tourney_teams["TeamID"].astype(str)
 
-    effects = pd.merge(effects, march_madness, on=["Season", "T1_TeamID", "T2_TeamID"])
+    effects = pd.merge(
+        effects,
+        tourney_teams.rename(columns={"TeamID": "T1_TeamID"}),
+        on=["Season", "T1_TeamID"],
+    )
+    effects = pd.merge(
+        effects,
+        tourney_teams.rename(columns={"TeamID": "T2_TeamID"}),
+        on=["Season", "T2_TeamID"],
+    )
 
     if seasons is None:
         seasons = sorted(effects["Season"].unique())
@@ -213,7 +241,7 @@ def compute_team_quality(
     def _quality_for_season(season: int) -> pd.DataFrame:
         data = effects.loc[effects["Season"] == season]
         if len(data) == 0:
-            return pd.DataFrame(columns=["TeamID", "quality", "Season"])
+            return pd.DataFrame(columns=["Season", "TeamID", "quality"])
         try:
             glm = sm.GLM.from_formula(
                 formula="win ~ -1 + T1_TeamID + T2_TeamID",
@@ -221,13 +249,13 @@ def compute_team_quality(
                 family=sm.families.Binomial(),
             ).fit()
             quality = pd.DataFrame(glm.params).reset_index()
-            quality.columns = ["TeamID", "quality"]
+            quality.columns = ["param", "quality"]
+            quality = quality.loc[quality["param"].str.startswith("T1_TeamID")]
+            quality["TeamID"] = quality["param"].str.extract(r"T1_TeamID\[T\.(\d+)\]")[0].astype(int)
             quality["Season"] = season
-            quality = quality.loc[quality["TeamID"].str.contains("T1_")].reset_index(drop=True)
-            quality["TeamID"] = quality["TeamID"].apply(lambda x: x[10:14]).astype(int)
-            return quality
+            return quality[["Season", "TeamID", "quality"]].reset_index(drop=True)
         except Exception:
-            return pd.DataFrame(columns=["TeamID", "quality", "Season"])
+            return pd.DataFrame(columns=["Season", "TeamID", "quality"])
 
     return pd.concat([_quality_for_season(s) for s in seasons], ignore_index=True)
 
@@ -286,7 +314,7 @@ def compute_massey_features(
 # Build full feature set for matchups
 # ---------------------------------------------------------------------------
 
-def build_matchup_features(
+def build_team_features(
     season_stats: pd.DataFrame,
     win_pct: pd.DataFrame,
     efficiency: pd.DataFrame,
@@ -295,10 +323,10 @@ def build_matchup_features(
     quality: Optional[pd.DataFrame] = None,
     massey: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
-    """Merge all per-team features into T1/T2 format for matchup merging.
+    """Merge all per-team features into a single lookup table.
 
-    Call this function to produce the feature lookup tables that get merged
-    onto tournament games or submission matchup pairs.
+    All inputs should be keyed on (Season, TeamID). The result is one row
+    per team per season with all features consolidated.
 
     Args:
         season_stats: Output of compute_season_stats.
@@ -310,82 +338,103 @@ def build_matchup_features(
         massey: Optional output of compute_massey_features.
 
     Returns:
-        Tuple of (features_T1, features_T2) DataFrames ready for merge.
+        DataFrame keyed on (Season, TeamID) with all features.
     """
-    # Start with season stats
     features = season_stats.copy()
 
-    # Merge additional per-team features
-    features = pd.merge(features, win_pct, on=["Season", "T1_TeamID"], how="left")
-    features = pd.merge(features, efficiency, on=["Season", "T1_TeamID"], how="left")
-    features = pd.merge(features, momentum, on=["Season", "T1_TeamID"], how="left")
+    # All these DataFrames are keyed on (Season, TeamID)
+    features = pd.merge(features, win_pct, on=["Season", "TeamID"], how="left")
+    features = pd.merge(features, efficiency, on=["Season", "TeamID"], how="left")
+    features = pd.merge(features, momentum, on=["Season", "TeamID"], how="left")
 
     # Seeds
-    seed_cols = seeds[["Season", "TeamID", "seed"]].copy()
-    seed_cols.columns = ["Season", "T1_TeamID", "T1_seed"]
-    features = pd.merge(features, seed_cols, on=["Season", "T1_TeamID"], how="left")
+    seed_cols = seeds[["Season", "TeamID", "seed"]].drop_duplicates()
+    features = pd.merge(features, seed_cols, on=["Season", "TeamID"], how="left")
 
     # Quality
     if quality is not None:
-        qual = quality.copy()
-        qual.columns = ["T1_TeamID", "T1_quality", "Season"]
-        features = pd.merge(features, qual, on=["Season", "T1_TeamID"], how="left")
+        features = pd.merge(
+            features, quality[["Season", "TeamID", "quality"]],
+            on=["Season", "TeamID"], how="left",
+        )
 
     # Massey
     if massey is not None:
-        massey_t1 = massey.copy()
-        massey_t1 = massey_t1.rename(columns={"TeamID": "T1_TeamID"})
-        # Prefix massey columns with T1_
-        massey_cols = [c for c in massey_t1.columns if c.startswith("Massey_")]
-        massey_t1 = massey_t1.rename(columns={c: f"T1_{c}" for c in massey_cols})
-        features = pd.merge(features, massey_t1, on=["Season", "T1_TeamID"], how="left")
+        features = pd.merge(features, massey, on=["Season", "TeamID"], how="left")
 
-    # Create T2 version
-    features_T1 = features.copy()
-    features_T2 = features.copy()
-
-    # Rename for T2
-    t2_rename = {}
-    for col in features_T2.columns:
-        if col in ("Season",):
-            continue
-        new_col = col.replace("T1_", "T2_").replace("T2_opponent_", "T1_opponent_")
-        if not col.startswith("T2_") and col != "Season":
-            new_col = "T2_" + col.lstrip("T1_") if col.startswith("T1_") else "T2_" + col
-        t2_rename[col] = new_col
-
-    features_T2.columns = ["Season"] + [
-        c.replace("T1_", "T2_") for c in features_T2.columns if c != "Season"
-    ]
-
-    return features_T1, features_T2
+    return features
 
 
 def create_matchup_df(
     matchup_df: pd.DataFrame,
-    features_T1: pd.DataFrame,
-    features_T2: pd.DataFrame,
+    team_features: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Merge T1 and T2 features onto a matchup DataFrame.
+    """Merge per-team features onto a matchup DataFrame for both teams.
+
+    Joins team_features twice — once for T1 (Team1) and once for T2 (Team2)
+    — prefixing columns with 'T1_' and 'T2_' respectively.
 
     Args:
         matchup_df: DataFrame with Season, T1_TeamID, T2_TeamID columns.
-        features_T1: T1 feature table from build_matchup_features.
-        features_T2: T2 feature table from build_matchup_features.
+        team_features: Output of build_team_features.
 
     Returns:
-        Enriched matchup DataFrame with all features merged.
+        Matchup DataFrame with T1_* and T2_* feature columns.
     """
     result = matchup_df.copy()
-    result = pd.merge(result, features_T1, on=["Season", "T1_TeamID"], how="left")
-    result = pd.merge(result, features_T2, on=["Season", "T2_TeamID"], how="left")
 
-    # Add seed difference
-    if "T1_seed" in result.columns and "T2_seed" in result.columns:
-        result["Seed_diff"] = result["T1_seed"] - result["T2_seed"]
+    # Prepare T1 features: rename TeamID -> T1_TeamID, prefix stat cols with T1_
+    feat_cols = [c for c in team_features.columns if c not in ("Season", "TeamID")]
+    t1 = team_features.rename(
+        columns={"TeamID": "T1_TeamID", **{c: f"T1_{c}" for c in feat_cols}}
+    )
+    t2 = team_features.rename(
+        columns={"TeamID": "T2_TeamID", **{c: f"T2_{c}" for c in feat_cols}}
+    )
 
-    # Add quality difference
-    if "T1_quality" in result.columns and "T2_quality" in result.columns:
-        result["Quality_diff"] = result["T1_quality"] - result["T2_quality"]
+    result = pd.merge(result, t1, on=["Season", "T1_TeamID"], how="left")
+    result = pd.merge(result, t2, on=["Season", "T2_TeamID"], how="left")
 
     return result
+
+
+def compute_difference_features(
+    matchup_df: pd.DataFrame,
+    exclude_cols: Optional[list[str]] = None,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Compute Team1 - Team2 difference for all paired feature columns.
+
+    Finds all columns with a 'T1_' prefix, looks for the matching 'T2_'
+    column, and creates a 'Diff_' column = T1 - T2. Opponent stats (Opp_*)
+    are excluded by default since they already represent the opponent.
+
+    Args:
+        matchup_df: Output of create_matchup_df.
+        exclude_cols: Additional column suffixes to exclude from differencing.
+
+    Returns:
+        Tuple of (enriched DataFrame, list of difference feature names).
+    """
+    if exclude_cols is None:
+        exclude_cols = []
+
+    result = matchup_df.copy()
+    diff_features = []
+
+    t1_cols = [c for c in result.columns if c.startswith("T1_") and c != "T1_TeamID"]
+    for t1_col in t1_cols:
+        suffix = t1_col[3:]  # e.g., "FGM", "Opp_FGM", "seed", ...
+
+        # Skip opponent stats — they'd create confusing double-negatives
+        if suffix.startswith("Opp_"):
+            continue
+        if suffix in exclude_cols:
+            continue
+
+        t2_col = f"T2_{suffix}"
+        if t2_col in result.columns:
+            diff_col = f"Diff_{suffix}"
+            result[diff_col] = result[t1_col] - result[t2_col]
+            diff_features.append(diff_col)
+
+    return result, diff_features

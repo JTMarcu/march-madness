@@ -183,12 +183,18 @@ def train_xgb_final(
 def fit_spline_calibrators(
     oof_preds: list[np.ndarray],
     y: np.ndarray,
+    n_bins: int = 200,
 ) -> list[UnivariateSpline]:
     """Fit UnivariateSpline calibrators mapping point diff → win probability.
+
+    Uses binned averaging to handle duplicate predictions properly.
+    Raw predictions are sorted, divided into equal-sized bins, and the
+    mean prediction + mean win rate per bin become the spline knot points.
 
     Args:
         oof_preds: List of OOF point differential predictions.
         y: True point differential.
+        n_bins: Number of bins for averaging (more = smoother fit).
 
     Returns:
         List of fitted UnivariateSpline objects.
@@ -197,9 +203,22 @@ def fit_spline_calibrators(
     spline_models = []
 
     for preds in oof_preds:
-        dat = sorted(zip(preds, labels), key=lambda x: x[0])
-        dat_dict = dict(dat)
-        spline = UnivariateSpline(list(dat_dict.keys()), list(dat_dict.values()))
+        # Sort by prediction value
+        order = np.argsort(preds)
+        sorted_preds = preds[order]
+        sorted_labels = labels[order]
+
+        # Bin into n_bins groups and average each bin
+        bin_size = max(len(sorted_preds) // n_bins, 1)
+        bin_x = []
+        bin_y = []
+        for i in range(0, len(sorted_preds), bin_size):
+            chunk_preds = sorted_preds[i : i + bin_size]
+            chunk_labels = sorted_labels[i : i + bin_size]
+            bin_x.append(chunk_preds.mean())
+            bin_y.append(chunk_labels.mean())
+
+        spline = UnivariateSpline(bin_x, bin_y, s=len(bin_x))
         spline_models.append(spline)
 
     return spline_models
