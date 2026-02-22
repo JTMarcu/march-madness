@@ -4,12 +4,51 @@ Combines men's and women's data into unified DataFrames with consistent
 column naming. All raw CSVs stay untouched in data/.
 """
 
+import subprocess
+import zipfile
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+COMPETITION = "march-machine-learning-mania-2026"
+
+
+def download_latest_data(data_dir: Optional[Path] = None) -> None:
+    """Download the latest competition data from Kaggle and extract it.
+
+    Requires the ``kaggle`` CLI to be installed and authenticated
+    (``~/.kaggle/kaggle.json``).  Downloads the full dataset ZIP and
+    extracts CSV files into *data_dir*, overwriting any existing files so
+    the notebook always uses the freshest data.
+
+    Args:
+        data_dir: Target directory.  Defaults to ``data/``.
+    """
+    d = data_dir or DATA_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    zip_path = d / f"{COMPETITION}.zip"
+
+    print(f"Downloading latest data from Kaggle ({COMPETITION})...")
+    subprocess.run(
+        [
+            "kaggle", "competitions", "download",
+            "-c", COMPETITION,
+            "-p", str(d),
+        ],
+        check=True,
+    )
+
+    if zip_path.exists():
+        print("Extracting ZIP...")
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(d)
+        zip_path.unlink()
+        print(f"Done — {len(list(d.glob('*.csv')))} CSV files in {d}")
+    else:
+        print("No ZIP found — files may already be extracted.")
 
 
 def load_regular_season(data_dir: Optional[Path] = None) -> pd.DataFrame:
