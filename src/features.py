@@ -333,6 +333,158 @@ def compute_team_quality(
 # Massey Ordinals feature
 # ---------------------------------------------------------------------------
 
+def compute_elo_ratings(
+    compact_results: pd.DataFrame,
+    K: float = 20.0,
+    home_advantage: float = 100.0,
+    initial_elo: float = 1500.0,
+    carry_over: float = 0.75,
+    min_season: int = 2003,
+) -> pd.DataFrame:
+    """Compute end-of-regular-season Elo ratings for all teams.
+
+    Elo is updated game-by-game in chronological order. Unlike season
+    averages, it captures *when* wins/losses happened and weighs recent
+    performance more heavily. Ratings carry over between seasons (regressed
+    toward the mean) so teams with sustained excellence get credit.
+
+    Args:
+        compact_results: Men's + women's compact results (Season, DayNum,
+            WTeamID, WScore, LTeamID, LScore, WLoc).
+        K: Elo K-factor — how much each game moves the rating.
+        home_advantage: Elo bonus for the home team.
+        initial_elo: Starting rating for new teams.
+        carry_over: Fraction of prior season's Elo retained (rest regresses
+            to initial_elo).
+        min_season: Earliest season to return ratings for (earlier seasons
+            are used to warm up Elo but not returned).
+
+    Returns:
+        DataFrame with Season, TeamID, Elo.
+    """
+    df = compact_results.sort_values(["Season", "DayNum"]).reset_index(drop=True)
+
+    # Track current Elo for each team
+    elo: dict[int, float] = {}
+    # Store end-of-regular-season snapshot per (Season, TeamID)
+    records: list[dict] = []
+
+    prev_season = None
+
+    for _, row in df.iterrows():
+        season = row["Season"]
+
+        # New season: carry over + regress toward mean
+        if season != prev_season:
+            # Snapshot end-of-last-season ratings
+            if prev_season is not None and prev_season >= min_season:
+                for tid, rating in elo.items():
+                    records.append(
+                        {"Season": prev_season, "TeamID": tid, "Elo": rating}
+                    )
+            # Regress all Elo toward initial_elo
+            for tid in elo:
+                elo[tid] = initial_elo + carry_over * (elo[tid] - initial_elo)
+            prev_season = season
+
+        w_id = int(row["WTeamID"])
+        l_id = int(row["LTeamID"])
+
+        # Initialize new teams
+        if w_id not in elo:
+            elo[w_id] = initial_elo
+        if l_id not in elo:
+            elo[l_id] = initial_elo
+
+        # Home advantage
+        w_elo = elo[w_id]
+        l_elo = elo[l_id]
+        loc = row.get("WLoc", "N")
+        if loc == "H":
+            w_elo += home_advantage
+        elif loc == "A":
+            l_elo += home_advantage
+
+        # Expected scores
+        e_w = 1.0 / (1.0 + 10.0 ** ((l_elo - w_elo) / 400.0))
+
+        # Margin-of-victory multiplier (diminishing returns for blowouts)
+        mov = abs(row["WScore"] - row["LScore"])
+        mov_mult = np.log1p(mov) * (2.2 / ((elo[w_id] - elo[l_id]) * 0.001 + 2.2))
+        mov_mult = max(mov_mult, 0.5)  # floor
+
+        # Update
+        elo[w_id] += K * mov_mult * (1.0 - e_w)
+        elo[l_id] -= K * mov_mult * (1.0 - e_w)
+
+    # Final season snapshot
+    if prev_season is not None and prev_season >= min_season:
+        for tid, rating in elo.items():
+            records.append({"Season": prev_season, "TeamID": tid, "Elo": rating})
+
+    result = pd.DataFrame(records)
+    # Normalize per season to z-scores for comparability
+    if len(result) > 0:
+        result["Elo"] = result.groupby("Season")["Elo"].transform(
+            lambda x: (x - x.mean()) / x.std() if x.std() > 0 else 0.0
+        )
+    return result
+
+
+def compute_coach_experience(
+    coaches_df: pd.DataFrame,
+    tourney_seeds: pd.DataFrame,
+) -> pd.DataFrame:
+    """Compute coach NCAA tournament experience (men only).
+
+    Counts how many prior NCAA tournament appearances a team's current
+    coach has made (across any team). Experienced tournament coaches
+    consistently outperform their seeds.
+
+    Args:
+        coaches_df: MTeamCoaches.csv with Season, TeamID, CoachName,
+            FirstDayNum, LastDayNum.
+        tourney_seeds: Tournament seeds with Season and TeamID.
+
+    Returns:
+        DataFrame with Season, TeamID, CoachTourneyExp (count of prior
+        tournament appearances for the coach).
+    """
+    # Identify which coach was leading the team at the end of the season
+    # (LastDayNum == 154 typically corresponds to end of season / tournament)
+    end_coaches = (
+        coaches_df
+        .sort_values(["Season", "TeamID", "LastDayNum"])
+        .groupby(["Season", "TeamID"])
+        .last()
+        .reset_index()[["Season", "TeamID", "CoachName"]]
+    )
+
+    # Which of those coaches' teams made the tournament?
+    tourney_teams = tourney_seeds[["Season", "TeamID"]].drop_duplicates()
+    coach_tourney = pd.merge(end_coaches, tourney_teams, on=["Season", "TeamID"])
+
+    # For each (Season, Coach), count prior tournament appearances
+    # Sort by Season so cumcount gives the count of PRIOR appearances
+    coach_tourney = coach_tourney.sort_values("Season")
+    coach_tourney["CoachTourneyExp"] = (
+        coach_tourney.groupby("CoachName").cumcount()
+    )  # 0-indexed: first appearance = 0 prior appearances
+
+    # Map back to ALL teams (not just tournament teams — some teams have
+    # coaches with tournament experience from other schools)
+    coach_exp = pd.merge(
+        end_coaches,
+        coach_tourney[["Season", "CoachName", "CoachTourneyExp"]].drop_duplicates(),
+        on=["Season", "CoachName"],
+        how="left",
+    )
+    # Coaches with no prior tournament experience get 0
+    coach_exp["CoachTourneyExp"] = coach_exp["CoachTourneyExp"].fillna(0).astype(int)
+
+    return coach_exp[["Season", "TeamID", "CoachTourneyExp"]]
+
+
 def compute_massey_features(
     massey_df: pd.DataFrame,
     top_systems: Optional[list[str]] = None,
@@ -393,6 +545,8 @@ def build_team_features(
     massey: Optional[pd.DataFrame] = None,
     shooting: Optional[pd.DataFrame] = None,
     sos: Optional[pd.DataFrame] = None,
+    elo: Optional[pd.DataFrame] = None,
+    coach: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Merge all per-team features into a single lookup table.
 
@@ -409,6 +563,8 @@ def build_team_features(
         massey: Optional output of compute_massey_features.
         shooting: Optional output of compute_shooting_pcts.
         sos: Optional output of compute_sos.
+        elo: Optional output of compute_elo_ratings.
+        coach: Optional output of compute_coach_experience.
 
     Returns:
         DataFrame keyed on (Season, TeamID) with all features.
@@ -442,6 +598,14 @@ def build_team_features(
     # Strength of schedule
     if sos is not None:
         features = pd.merge(features, sos, on=["Season", "TeamID"], how="left")
+
+    # Elo ratings
+    if elo is not None:
+        features = pd.merge(features, elo, on=["Season", "TeamID"], how="left")
+
+    # Coach tournament experience
+    if coach is not None:
+        features = pd.merge(features, coach, on=["Season", "TeamID"], how="left")
 
     return features
 

@@ -127,9 +127,12 @@ compute_efficiency(game_data)            → OffEff, DefEff, Possessions
 compute_last14_momentum(game_data)       → win_ratio_14d
 compute_sos(game_data, win_pct)          → SOS (avg opponent WinPct)
 compute_team_quality(game_data, seeds)   → quality (L2-regularized GLM + z-score)
+compute_elo_ratings(compact_results)     → Elo (game-by-game Elo, z-scored per season)
+compute_coach_experience(coaches, seeds) → CoachTourneyExp (prior tournament appearances, MEN ONLY)
 compute_massey_features(massey_raw)      → Massey_POM, Massey_SAG, etc. (MEN ONLY)
 build_team_features(stats, winpct, eff, momentum, seeds,
-                    quality=None, massey=None, shooting=None, sos=None)
+                    quality=None, massey=None, shooting=None, sos=None,
+                    elo=None, coach=None)
                                           → single table keyed on (Season, TeamID)
 create_matchup_df(matchups, team_features) → T1_* and T2_* columns via join
 compute_difference_features(matchup_df)  → (df_with_Diff_cols, list_of_diff_col_names)
@@ -171,28 +174,27 @@ valid_seasons(min_season=2003, max_season=2026)  # Excludes 2020
 
 Ranked by absolute importance from 2025 validation (logistic regression coefficients):
 
-| Rank | Feature | Coefficient | Impact |
-|------|---------|-------------|--------|
-| 1 | `Diff_seed` | −1.10 | **Dominant** — lower seed = higher win prob |
-| 2 | `Diff_PointDiff` | +0.70 | Point differential in regular season |
-| 3 | `Diff_OffEff` | +0.40 | Offensive efficiency (points per possession) |
-| 4 | `Diff_WinPct` | +0.35 | Win percentage |
-| 5 | `Diff_DefEff` | −0.30 | Defensive efficiency (lower = better) |
-| 6 | `Diff_win_ratio_14d` | +0.20 | Late-season momentum |
-| 7 | `Diff_quality` | +0.15 | GLM team quality metric |
+| Rank | Feature | Men's Coeff | Women's Coeff | Impact |
+|------|---------|-------------|---------------|--------|
+| 1 | `Diff_Elo` | +0.92 | +1.47 | **Dominant** — dynamic game-by-game rating |
+| 2 | `Diff_seed` | −0.48 | −0.99 | Lower seed = better team |
+| 3 | `Diff_WinPct` | −0.37 | −1.16 | Win percentage (negative due to multicollinearity) |
+| 4 | `Diff_PointDiff` | +0.20 | +0.94 | Point differential in regular season |
+| 5 | `Diff_OffEff` | +0.09 | −1.02 | Offensive efficiency (sign varies with Elo) |
+| 6 | `Diff_quality` | −0.09 | +0.17 | GLM team quality metric |
 
-**Key insight:** The top 4 features (`Diff_seed`, `Diff_PointDiff`, `Diff_OffEff`, `Diff_WinPct`) capture nearly all the signal. Additional features provide diminishing returns and increase overfitting risk on ~130 tournament games per year.
+**Key insight:** Elo ratings are now the **strongest feature** in both models. The top 6 features (`Diff_Elo`, `Diff_seed`, `Diff_WinPct`, `Diff_PointDiff`, `Diff_OffEff`, `Diff_quality`) drive the model. Elo's game-by-game dynamics capture information that static season averages miss.
 
 ## Modeling Guidelines (Updated with 2025 Results)
 
 ### Critical Finding: Simple Models Win + Split M/W
 With only **~1,962 total tournament games** (2010–2025, M+W), complex models overfit:
-- **Split M/W LogReg: MSE = 0.1613** (BEST full-submission)
-- Combined LogReg: MSE = 0.1625
-- XGBoost classifier: MSE = 0.1617
+- **Split M/W LogReg: MSE = 0.1604** (BEST full-submission, with Elo)
+- Combined LogReg: MSE = 0.1606 (with Elo)
+- XGBoost classifier: MSE = 0.1591 (with Elo, combined)
 - Women-only LogReg: MSE = 0.1339 (remarkably predictable)
 
-**Rule: Use separate M/W models. Start with logistic regression on 4–6 features. Only add complexity if it beats LogReg on ≥2 of 3 holdout years.**
+**Rule: Use separate M/W models. Start with logistic regression on 4–6 features including Elo. Only add complexity if it beats LogReg on ≥2 of 3 holdout years.**
 
 ### Validation Strategy
 1. **Multi-year holdout** — validate on 2023, 2024, AND 2025 (not just one year). A change only counts if it helps on **at least 2 of 3** holdout years.
@@ -267,7 +269,8 @@ show_leaderboard()  # See all experiments ranked by average MSE
 - **2025 competition**: RandomForest + 13 diff features. No seeds, no Massey, no ensemble. Basic approach.
 - **2023 competition** (`old/paris-madness-2023.ipynb`): XGBoost regression with Cauchy loss, GLM quality, seed features, spline calibration. Most sophisticated prior approach.
 - **2026 iteration 1** (`notebooks/03_modeling.ipynb`): 3-phase pipeline. LogReg MSE=0.1447 beat XGBoost (0.1529) and ensemble (0.1523). GLM quality was overflowing (fixed). Massey handling was wrong for women (fixed).
-- **2026 iteration 2** (`notebooks/04_refined.ipynb`): 25+ experiments. Split M/W strategy discovered — women far more predictable (0.134 vs 0.187 men-only). SOS and shooting % tested but don't beat top4+quality. Final: split LR with top4+quality.
+- **2026 iteration 2** (`notebooks/04_refined.ipynb`): 25+ experiments. Split M/W strategy discovered — women far more predictable (0.134 vs 0.187 men-only). SOS and shooting % tested but don't beat top4+quality.
+- **2026 iteration 3** (`notebooks/04_refined.ipynb`): Added Elo ratings (game-by-game dynamic ratings) and coach tournament experience. Elo improved split MSE from 0.1614 → 0.1604. Coach experience did not help. Final: split LR with top4+quality+Elo.
 
 ## Key Learnings (Empirically Validated)
 1. **Simple logistic regression beats complex models** on ~2K tournament games — the dataset is too small for deep trees
@@ -283,3 +286,5 @@ show_leaderboard()  # See all experiments ranked by average MSE
 11. **Every new feature/model must earn its place** — test on 3 holdout years, keep only if it helps 2+ of them
 12. **SOS and shooting % are redundant** — seed already encodes SOS; shooting % overlaps with OffEff. Neither beats top4+quality in multi-year validation
 13. **Regularization strength (C=1.0) is near-optimal** — sweep from 0.01 to 5.0 shows diminishing returns from deviating
+14. **Elo ratings are the strongest feature** — game-by-game dynamic ratings with margin-of-victory capture recency, opponent quality, and historical momentum. Elo is the largest coefficient in both M and W models.
+15. **Coach tournament experience doesn't help** — despite intuition, coach NCAA tournament appearances add noise rather than signal in multi-year validation
