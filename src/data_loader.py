@@ -32,14 +32,20 @@ def download_latest_data(data_dir: Optional[Path] = None) -> None:
     zip_path = d / f"{COMPETITION}.zip"
 
     print(f"Downloading latest data from Kaggle ({COMPETITION})...")
-    subprocess.run(
+    result = subprocess.run(
         [
             "kaggle", "competitions", "download",
             "-c", COMPETITION,
             "-p", str(d),
         ],
-        check=True,
+        capture_output=True,
+        text=True,
     )
+
+    # Kaggle CLI writes progress bars to stderr, which is normal.
+    # Only treat it as a real failure if the ZIP wasn't produced.
+    if result.stdout:
+        print(result.stdout.strip())
 
     if zip_path.exists():
         print("Extracting ZIP...")
@@ -47,8 +53,13 @@ def download_latest_data(data_dir: Optional[Path] = None) -> None:
             zf.extractall(d)
         zip_path.unlink()
         print(f"Done — {len(list(d.glob('*.csv')))} CSV files in {d}")
+    elif result.returncode != 0:
+        # Real failure — no ZIP and non-zero exit code
+        err_msg = (result.stderr or "").strip()
+        print(f"⚠️  Kaggle download failed (exit {result.returncode}): {err_msg}")
+        print("Continuing with existing local data...")
     else:
-        print("No ZIP found — files may already be extracted.")
+        print("No ZIP found — files may already be up to date.")
 
 
 def load_regular_season(data_dir: Optional[Path] = None) -> pd.DataFrame:
