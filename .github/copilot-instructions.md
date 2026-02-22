@@ -121,12 +121,15 @@ Key functions:
 ```python
 prepare_game_data(df)                    → symmetric T1/T2 rows (each game = 2 rows)
 compute_season_stats(game_data)          → per-game averages: FGM, Opp_FGM, Score, etc.
+compute_shooting_pcts(season_stats)      → FGPct, FG3Pct, FTPct (ratio features)
 compute_win_pct(game_data)               → WinPct, Games
 compute_efficiency(game_data)            → OffEff, DefEff, Possessions
 compute_last14_momentum(game_data)       → win_ratio_14d
+compute_sos(game_data, win_pct)          → SOS (avg opponent WinPct)
 compute_team_quality(game_data, seeds)   → quality (L2-regularized GLM + z-score)
 compute_massey_features(massey_raw)      → Massey_POM, Massey_SAG, etc. (MEN ONLY)
-build_team_features(stats, winpct, eff, momentum, seeds, quality=None, massey=None)
+build_team_features(stats, winpct, eff, momentum, seeds,
+                    quality=None, massey=None, shooting=None, sos=None)
                                           → single table keyed on (Season, TeamID)
 create_matchup_df(matchups, team_features) → T1_* and T2_* columns via join
 compute_difference_features(matchup_df)  → (df_with_Diff_cols, list_of_diff_col_names)
@@ -182,13 +185,14 @@ Ranked by absolute importance from 2025 validation (logistic regression coeffici
 
 ## Modeling Guidelines (Updated with 2025 Results)
 
-### Critical Finding: Simple Models Win
+### Critical Finding: Simple Models Win + Split M/W
 With only **~1,962 total tournament games** (2010–2025, M+W), complex models overfit:
-- **Logistic Regression: MSE = 0.1447** (BEST)
-- XGBoost classifier: MSE = 0.1529
-- Full ensemble: MSE = 0.1523
+- **Split M/W LogReg: MSE = 0.1613** (BEST full-submission)
+- Combined LogReg: MSE = 0.1625
+- XGBoost classifier: MSE = 0.1617
+- Women-only LogReg: MSE = 0.1339 (remarkably predictable)
 
-**Rule: Start with logistic regression on 4–6 features. Only add complexity if it beats LogReg on ALL holdout years.**
+**Rule: Use separate M/W models. Start with logistic regression on 4–6 features. Only add complexity if it beats LogReg on ≥2 of 3 holdout years.**
 
 ### Validation Strategy
 1. **Multi-year holdout** — validate on 2023, 2024, AND 2025 (not just one year). A change only counts if it helps on **at least 2 of 3** holdout years.
@@ -263,6 +267,7 @@ show_leaderboard()  # See all experiments ranked by average MSE
 - **2025 competition**: RandomForest + 13 diff features. No seeds, no Massey, no ensemble. Basic approach.
 - **2023 competition** (`old/paris-madness-2023.ipynb`): XGBoost regression with Cauchy loss, GLM quality, seed features, spline calibration. Most sophisticated prior approach.
 - **2026 iteration 1** (`notebooks/03_modeling.ipynb`): 3-phase pipeline. LogReg MSE=0.1447 beat XGBoost (0.1529) and ensemble (0.1523). GLM quality was overflowing (fixed). Massey handling was wrong for women (fixed).
+- **2026 iteration 2** (`notebooks/04_refined.ipynb`): 25+ experiments. Split M/W strategy discovered — women far more predictable (0.134 vs 0.187 men-only). SOS and shooting % tested but don't beat top4+quality. Final: split LR with top4+quality.
 
 ## Key Learnings (Empirically Validated)
 1. **Simple logistic regression beats complex models** on ~2K tournament games — the dataset is too small for deep trees
@@ -273,6 +278,8 @@ show_leaderboard()  # See all experiments ranked by average MSE
 6. **Overconfident predictions destroy MSE** — always clip to [0.025, 0.975]
 7. **GLM team quality must be regularized** — unregularized GLM on team indicators overflows (1e16 values)
 8. **Massey ordinals are men-only** — filling women's data with 0 is worse than excluding them
-9. **Combined M+W model works fine** — don't over-engineer gender differences (except for Massey)
+9. **Split M/W models beat combined** — women's tournament is more predictable (fewer upsets, larger talent gaps), so a tuned women-only model dramatically improves overall MSE
 10. **Point differential → probability calibration outperforms direct classification** (but LogReg is simpler and nearly as good)
 11. **Every new feature/model must earn its place** — test on 3 holdout years, keep only if it helps 2+ of them
+12. **SOS and shooting % are redundant** — seed already encodes SOS; shooting % overlaps with OffEff. Neither beats top4+quality in multi-year validation
+13. **Regularization strength (C=1.0) is near-optimal** — sweep from 0.01 to 5.0 shows diminishing returns from deviating

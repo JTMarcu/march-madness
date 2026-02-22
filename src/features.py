@@ -116,6 +116,65 @@ def compute_season_stats(regular_data: pd.DataFrame) -> pd.DataFrame:
     return stats
 
 
+def compute_shooting_pcts(season_stats: pd.DataFrame) -> pd.DataFrame:
+    """Compute shooting percentage features from season averages.
+
+    Derived from per-game average makes & attempts already in season_stats.
+    These ratio features capture *efficiency* independent of pace.
+
+    Args:
+        season_stats: Output of compute_season_stats (per-game averages).
+
+    Returns:
+        DataFrame with Season, TeamID, FGPct, FG3Pct, FTPct.
+    """
+    df = season_stats[["Season", "TeamID"]].copy()
+
+    # Team shooting percentages
+    if "FGA" in season_stats.columns and "FGM" in season_stats.columns:
+        df["FGPct"] = season_stats["FGM"] / season_stats["FGA"].replace(0, np.nan)
+    if "FGA3" in season_stats.columns and "FGM3" in season_stats.columns:
+        df["FG3Pct"] = season_stats["FGM3"] / season_stats["FGA3"].replace(0, np.nan)
+    if "FTA" in season_stats.columns and "FTM" in season_stats.columns:
+        df["FTPct"] = season_stats["FTM"] / season_stats["FTA"].replace(0, np.nan)
+
+    return df
+
+
+def compute_sos(
+    regular_data: pd.DataFrame,
+    win_pct: pd.DataFrame,
+) -> pd.DataFrame:
+    """Compute Strength of Schedule as average opponent win percentage.
+
+    A team that beats 20-win teams is stronger than one beating 5-win teams,
+    even if both have the same record. SOS captures this.
+
+    Args:
+        regular_data: Output of prepare_game_data.
+        win_pct: Output of compute_win_pct (Season, TeamID, WinPct).
+
+    Returns:
+        DataFrame with Season, TeamID, SOS.
+    """
+    df = regular_data[["Season", "T1_TeamID", "T2_TeamID"]].copy()
+    # Look up each opponent's win percentage
+    df = pd.merge(
+        df,
+        win_pct.rename(columns={"TeamID": "T2_TeamID", "WinPct": "Opp_WinPct"}),
+        on=["Season", "T2_TeamID"],
+        how="left",
+    )
+    # Average opponent win percentage = strength of schedule
+    sos = (
+        df.groupby(["Season", "T1_TeamID"])["Opp_WinPct"]
+        .mean()
+        .reset_index(name="SOS")
+    )
+    sos = sos.rename(columns={"T1_TeamID": "TeamID"})
+    return sos
+
+
 def compute_win_pct(regular_data: pd.DataFrame) -> pd.DataFrame:
     """Compute per-team per-season win percentage.
 
@@ -332,6 +391,8 @@ def build_team_features(
     seeds: pd.DataFrame,
     quality: Optional[pd.DataFrame] = None,
     massey: Optional[pd.DataFrame] = None,
+    shooting: Optional[pd.DataFrame] = None,
+    sos: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Merge all per-team features into a single lookup table.
 
@@ -346,6 +407,8 @@ def build_team_features(
         seeds: Tournament seeds with Season, TeamID, seed columns.
         quality: Optional output of compute_team_quality.
         massey: Optional output of compute_massey_features.
+        shooting: Optional output of compute_shooting_pcts.
+        sos: Optional output of compute_sos.
 
     Returns:
         DataFrame keyed on (Season, TeamID) with all features.
@@ -371,6 +434,14 @@ def build_team_features(
     # Massey
     if massey is not None:
         features = pd.merge(features, massey, on=["Season", "TeamID"], how="left")
+
+    # Shooting percentages
+    if shooting is not None:
+        features = pd.merge(features, shooting, on=["Season", "TeamID"], how="left")
+
+    # Strength of schedule
+    if sos is not None:
+        features = pd.merge(features, sos, on=["Season", "TeamID"], how="left")
 
     return features
 
