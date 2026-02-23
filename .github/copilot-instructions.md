@@ -35,7 +35,10 @@ Madness/
 │   ├── data_loader.py                # Load & merge raw CSVs (men + women)
 │   ├── features.py                   # Feature engineering pipeline
 │   ├── models.py                     # Model training & prediction helpers
-│   └── utils.py                      # Team lookups, submission generation, plotting
+│   ├── utils.py                      # Team lookups, submission generation, plotting
+│   ├── bracket.py                    # Bracket simulation engine
+│   └── export_models.py             # Train & save final models for bracket app
+├── app.py                            # Streamlit interactive bracket predictor
 ├── models/                           # Saved trained models (.pkl, .cbm, .json)
 ├── output/                           # Submission CSVs
 ├── old/                              # Old notebooks from prior years (reference only)
