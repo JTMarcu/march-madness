@@ -29,7 +29,7 @@ Madness/
 │   └── Processed_*.csv              # Intermediate processed data (regenerable)
 ├── notebooks/
 │   ├── 03_modeling.ipynb             # Original 3-phase pipeline (reference)
-│   └── 04_refined.ipynb             # PRIMARY — experiment tracking + multi-year validation
+│   └── march_madness_2026.ipynb     # PRIMARY — experiment tracking + multi-year validation
 ├── src/                              # Reusable Python modules
 │   ├── __init__.py
 │   ├── data_loader.py                # Load & merge raw CSVs (men + women)
@@ -224,7 +224,7 @@ The `compute_team_quality()` function uses L2-regularized logistic regression on
 
 ## Experiment Tracking Methodology
 
-Use `notebooks/04_refined.ipynb` for systematic experimentation:
+Use `notebooks/march_madness_2026.ipynb` for systematic experimentation:
 
 ```python
 # Every experiment follows this pattern:
@@ -242,7 +242,7 @@ show_leaderboard()  # See all experiments ranked by average MSE
 
 ### Adding New Experiments
 1. Compute any new features in `src/features.py`
-2. Add a cell in `04_refined.ipynb` calling `run_experiment()`
+2. Add a cell in `march_madness_2026.ipynb` calling `run_experiment()`
 3. Check the leaderboard — does it beat the current best on 2+ holdout years?
 4. If yes, update `FINAL_FEATURES` and `FINAL_MODEL` in the submission cell
 
@@ -254,7 +254,7 @@ show_leaderboard()  # See all experiments ranked by average MSE
 3. Update `SampleSubmission*.csv` files for 2026
 
 ### Phase 2: Feature Engineering & Experiments
-1. Run `04_refined.ipynb` from top — it automatically loads data and builds features
+1. Run `march_madness_2026.ipynb` from top — it automatically loads data and builds features
 2. Run all experiment cells — the leaderboard shows what works
 3. Try new feature/model combos as additional experiments
 4. Keep what beats the baseline on 2+ holdout years
@@ -269,8 +269,8 @@ show_leaderboard()  # See all experiments ranked by average MSE
 - **2025 competition**: RandomForest + 13 diff features. No seeds, no Massey, no ensemble. Basic approach.
 - **2023 competition** (`old/paris-madness-2023.ipynb`): XGBoost regression with Cauchy loss, GLM quality, seed features, spline calibration. Most sophisticated prior approach.
 - **2026 iteration 1** (`notebooks/03_modeling.ipynb`): 3-phase pipeline. LogReg MSE=0.1447 beat XGBoost (0.1529) and ensemble (0.1523). GLM quality was overflowing (fixed). Massey handling was wrong for women (fixed).
-- **2026 iteration 2** (`notebooks/04_refined.ipynb`): 25+ experiments. Split M/W strategy discovered — women far more predictable (0.134 vs 0.187 men-only). SOS and shooting % tested but don't beat top4+quality.
-- **2026 iteration 3** (`notebooks/04_refined.ipynb`): Added Elo ratings (game-by-game dynamic ratings) and coach tournament experience. Elo improved split MSE from 0.1614 → 0.1604. Coach experience did not help. Final: split LR with top4+quality+Elo.
+- **2026 iteration 2** (`notebooks/march_madness_2026.ipynb`): 25+ experiments. Split M/W strategy discovered — women far more predictable (0.134 vs 0.187 men-only). SOS and shooting % tested but don't beat top4+quality.
+- **2026 iteration 3** (`notebooks/march_madness_2026.ipynb`): Added Elo ratings (game-by-game dynamic ratings) and coach tournament experience. Elo improved split MSE from 0.1614 → 0.1604. Coach experience did not help. Final: split LR with top4+quality+Elo.
 
 ## Key Learnings (Empirically Validated)
 1. **Simple logistic regression beats complex models** on ~2K tournament games — the dataset is too small for deep trees
