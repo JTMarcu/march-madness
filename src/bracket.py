@@ -104,13 +104,16 @@ class BracketPredictor:
         if len(t1_feats) == 0 or len(t2_feats) == 0:
             return 0.5  # No data — return neutral
 
-        # Compute difference features
+        # Compute difference features (NaN → 0 so LogReg won't crash)
         feature_vals = []
         for feat in self.features:
             col = feat.replace("Diff_", "")
             t1_val = t1_feats[col].values[0] if col in t1_feats.columns else 0
             t2_val = t2_feats[col].values[0] if col in t2_feats.columns else 0
-            feature_vals.append(t1_val - t2_val)
+            diff = t1_val - t2_val
+            if np.isnan(diff):
+                diff = 0.0
+            feature_vals.append(diff)
 
         X = np.array([feature_vals])
 
