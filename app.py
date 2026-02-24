@@ -590,7 +590,7 @@ def main():
         sd = sim.seeds.copy()
         sd["Team"] = sd["TeamID"].apply(predictor.team_name)
         sd = sd[["Seed", "Team", "TeamID"]].sort_values("Seed")
-        st.dataframe(sd, hide_index=True, use_container_width=True)
+        st.dataframe(sd, hide_index=True, width="stretch")
 
     # Sidebar: model info
     with st.sidebar.expander("\U0001F4CA Model Info", expanded=False):
@@ -628,7 +628,7 @@ def main():
             df.columns = ["Round", "Team 1", "Team 2", "Winner", "P(Team 1)"]
             df["P(Team 1)"] = df["P(Team 1)"].apply(
                 lambda x: f"{x:.1%}" if x is not None else "\u2014")
-            st.dataframe(df, hide_index=True, use_container_width=True)
+            st.dataframe(df, hide_index=True, width="stretch")
 
     # ── Matchup Explorer ──────────────────────────────────────────────────
     st.markdown("---")

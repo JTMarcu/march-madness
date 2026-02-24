@@ -104,25 +104,26 @@ class BracketPredictor:
         if len(t1_feats) == 0 or len(t2_feats) == 0:
             return 0.5  # No data — return neutral
 
-        # Compute difference features (NaN → 0 so LogReg won't crash)
+        # Compute difference features (NaN/Inf → 0 so LogReg won't crash)
         feature_vals = []
         for feat in self.features:
             col = feat.replace("Diff_", "")
-            t1_val = t1_feats[col].values[0] if col in t1_feats.columns else 0
-            t2_val = t2_feats[col].values[0] if col in t2_feats.columns else 0
-            diff = t1_val - t2_val
-            if np.isnan(diff):
+            t1_val = t1_feats[col].values[0] if col in t1_feats.columns else 0.0
+            t2_val = t2_feats[col].values[0] if col in t2_feats.columns else 0.0
+            try:
+                diff = float(t1_val) - float(t2_val)
+            except (TypeError, ValueError):
                 diff = 0.0
             feature_vals.append(diff)
 
-        X = np.array([feature_vals])
+        X = np.nan_to_num(np.array([feature_vals], dtype=np.float64), nan=0.0, posinf=0.0, neginf=0.0)
 
         # Select model based on gender
         if gender == "M":
-            X_scaled = self.men_scaler.transform(X)
+            X_scaled = np.nan_to_num(self.men_scaler.transform(X), nan=0.0)
             prob = self.men_model.predict_proba(X_scaled)[0, 1]
         else:
-            X_scaled = self.women_scaler.transform(X)
+            X_scaled = np.nan_to_num(self.women_scaler.transform(X), nan=0.0)
             prob = self.women_model.predict_proba(X_scaled)[0, 1]
 
         return float(np.clip(prob, 0.025, 0.975))
