@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>March Madness Bracket Predictor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/bracket.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏀</text></svg>" />
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ═══ Sidebar ═══ -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span class="icon">🏀</span>
+      <h1>March Madness<span class="subtitle">Bracket Predictor</span></h1>
+    </div>
+
+    <!-- Gender toggle -->
+    <div class="sidebar-section">
+      <label>Tournament</label>
+      <div class="toggle-group">
+        <button class="active" data-gender="M">Men's</button>
+        <button data-gender="W">Women's</button>
+      </div>
+    </div>
+
+    <!-- Season select -->
+    <div class="sidebar-section">
+      <label>Season</label>
+      <select id="season-select"></select>
+    </div>
+
+    <!-- Actions -->
+    <div class="sidebar-section">
+      <label>Actions</label>
+      <div class="action-buttons">
+        <button class="btn btn-primary" id="btn-auto">
+          <span class="btn-icon">⚡</span>Auto-Fill
+        </button>
+        <button class="btn btn-secondary" id="btn-random">
+          <span class="btn-icon">🎲</span>Random
+        </button>
+        <button class="btn btn-secondary" id="btn-reset">
+          <span class="btn-icon">↺</span>Reset
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-panel">
+      <h3>Bracket Stats</h3>
+      <div class="stat-row">
+        <span class="label">Games decided</span>
+        <span class="value" id="stat-decided">0/63</span>
+      </div>
+      <div class="stat-row">
+        <span class="label">Upsets</span>
+        <span class="value" id="stat-upsets">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="label">Your picks</span>
+        <span class="value" id="stat-overrides">0</span>
+      </div>
+    </div>
+
+    <!-- Matchup Explorer -->
+    <div class="sidebar-section" style="margin-top: auto; border-top: 1px solid var(--border); padding-top: 14px;">
+      <label>Matchup Explorer</label>
+      <div class="explorer-grid" style="flex-direction:column; gap:6px;">
+        <select id="explore-team-a"><option>Select team…</option></select>
+        <span class="explorer-vs" style="text-align:center;">vs</span>
+        <select id="explore-team-b"><option>Select team…</option></select>
+        <button class="btn btn-primary" id="btn-explore" style="width:100%;">Compare</button>
+      </div>
+
+      <div id="explorer-result" class="hidden" style="margin-top:10px;">
+        <div class="explorer-result">
+          <div class="explorer-team">
+            <div class="name" id="explore-name-a"></div>
+            <div class="prob" id="explore-prob-a"></div>
+          </div>
+          <div class="explorer-vs">vs</div>
+          <div class="explorer-team">
+            <div class="name" id="explore-name-b"></div>
+            <div class="prob" id="explore-prob-b"></div>
+          </div>
+        </div>
+        <div class="explorer-bar">
+          <div class="explorer-bar-fill" id="explore-bar-fill" style="width:50%;"></div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══ Main ═══ -->
+  <main class="main">
+    <header class="header">
+      <h2 id="header-title">NCAA Tournament</h2>
+      <div class="champion-display empty" id="champion-display">
+        <span>🏆</span>
+        <span id="champion-name">Pick a champion</span>
+      </div>
+    </header>
+
+    <div class="bracket-viewport" id="bracket-viewport">
+      <!-- SVG bracket rendered here by bracket.js -->
+    </div>
+  </main>
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip"></div>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Loading…</div>
+</div>
+
+<!-- Scripts -->
+<script src="/static/js/api.js"></script>
+<script src="/static/js/bracket.js"></script>
+
+</body>
+</html>

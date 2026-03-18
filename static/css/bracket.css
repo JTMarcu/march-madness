@@ -1,0 +1,583 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   March Madness Bracket Predictor — Stylesheet
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── CSS Variables / Theme ──────────────────────────────────────────── */
+:root {
+  --bg:           #0f1117;
+  --bg-card:      #1a1d28;
+  --bg-sidebar:   #141720;
+  --bg-hover:     #252a3a;
+  --text:         #e8e8ed;
+  --text-dim:     #8a8f9d;
+  --text-muted:   #555a6e;
+  --accent:       #ff6b35;
+  --accent-glow:  rgba(255,107,53,0.3);
+  --green:        #2ecc71;
+  --green-dim:    #27ae60;
+  --green-bg:     rgba(46,204,113,0.12);
+  --red:          #e74c3c;
+  --yellow:       #f1c40f;
+  --blue:         #3498db;
+  --purple:       #9b59b6;
+  --border:       #2a2d3a;
+  --border-light: #363a4a;
+  --radius:       6px;
+  --radius-lg:    10px;
+  --shadow:       0 2px 12px rgba(0,0,0,0.3);
+  --ff:           'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ff-mono:      'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Region accent colors */
+  --region-W:     #3498db;
+  --region-X:     #e74c3c;
+  --region-Y:     #2ecc71;
+  --region-Z:     #f39c12;
+}
+
+/* ── Reset & Base ────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  font-size: 14px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--ff);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button {
+  font-family: var(--ff);
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+/* ── App Layout ──────────────────────────────────────────────────────── */
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+.sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 16px;
+  gap: 16px;
+  overflow-y: auto;
+  max-height: 100vh;
+  position: sticky;
+  top: 0;
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-logo .icon { font-size: 28px; }
+
+.sidebar-logo h1 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.sidebar-logo .subtitle {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  font-weight: 400;
+  display: block;
+}
+
+/* Sidebar sections */
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-section label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.sidebar-section select,
+.sidebar-section input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-family: var(--ff);
+}
+
+.sidebar-section select:focus,
+.sidebar-section input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* Toggle buttons (M/W) */
+.toggle-group {
+  display: flex;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.toggle-group button {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--bg);
+  color: var(--text-dim);
+  border: none;
+  transition: all 0.2s;
+}
+
+.toggle-group button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.toggle-group button:hover:not(.active) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* Action buttons */
+.action-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.btn {
+  flex: 1;
+  padding: 9px 6px;
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #ff8555;
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.btn-secondary {
+  background: var(--bg-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--border-light);
+}
+
+.btn-icon {
+  margin-right: 3px;
+}
+
+/* Stats panel */
+.stats-panel {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 12px;
+  border: 1px solid var(--border);
+}
+
+.stats-panel h3 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 0.82rem;
+}
+
+.stat-row .label { color: var(--text-dim); }
+.stat-row .value { color: var(--text); font-weight: 600; }
+
+/* ── Main Content ────────────────────────────────────────────────────── */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header bar */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.header h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.header .champion-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--green-bg);
+  border: 1px solid var(--green-dim);
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--green);
+  transition: all 0.3s;
+}
+
+.header .champion-display.empty {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+/* ── Bracket Viewport ────────────────────────────────────────────────── */
+.bracket-viewport {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  position: relative;
+}
+
+/* ── SVG Bracket ─────────────────────────────────────────────────────── */
+.bracket-svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 1100px;
+}
+
+/* Team boxes in SVG */
+.team-box {
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.team-box:hover {
+  opacity: 0.85;
+}
+
+.team-box rect {
+  transition: fill 0.25s, stroke 0.25s;
+}
+
+.team-box.winner rect {
+  fill: var(--green-bg);
+  stroke: var(--green);
+  stroke-width: 1.5;
+}
+
+.team-box.loser rect {
+  opacity: 0.45;
+}
+
+.team-box.pickable:hover rect {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+/* Connector lines */
+.connector {
+  stroke: var(--border-light);
+  stroke-width: 1;
+  transition: stroke 0.3s;
+}
+
+.connector.active {
+  stroke: var(--green-dim);
+  stroke-width: 1.5;
+}
+
+/* Round headers in SVG */
+.round-header {
+  fill: var(--text-muted);
+  font-size: 8px;
+  font-family: var(--ff);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-anchor: middle;
+}
+
+/* Region labels */
+.region-label {
+  font-size: 9px;
+  font-family: var(--ff);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Team name text */
+.team-name {
+  font-family: var(--ff);
+  font-size: 9px;
+  fill: var(--text);
+}
+
+.team-name.winner {
+  fill: var(--green);
+  font-weight: 700;
+}
+
+.team-name.tbd {
+  fill: var(--text-muted);
+  font-style: italic;
+}
+
+.seed-badge {
+  font-family: var(--ff-mono);
+  font-size: 8px;
+  fill: var(--text-dim);
+  font-weight: 600;
+}
+
+/* Probability bar between teams */
+.prob-bar-bg {
+  fill: var(--border);
+  rx: 1;
+}
+
+.prob-bar-fg {
+  rx: 1;
+  transition: width 0.4s ease;
+}
+
+.prob-text {
+  font-family: var(--ff-mono);
+  font-size: 7px;
+  fill: var(--text-dim);
+}
+
+/* Champion crown */
+.champion-crown {
+  font-size: 24px;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.champion-name-svg {
+  font-family: var(--ff);
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: var(--accent);
+}
+
+/* ── Matchup Explorer (bottom panel) ─────────────────────────────────── */
+.explorer-panel {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.explorer-panel h3 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+
+.explorer-grid {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.explorer-grid select {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-family: var(--ff);
+}
+
+.explorer-result {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.explorer-team {
+  flex: 1;
+  text-align: center;
+}
+
+.explorer-team .name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.explorer-team .prob {
+  font-size: 1.8rem;
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+.explorer-team .prob.favored {
+  color: var(--green);
+}
+
+.explorer-team .prob.underdog {
+  color: var(--red);
+}
+
+.explorer-vs {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.explorer-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.explorer-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--green), var(--accent));
+  transition: width 0.4s ease;
+}
+
+/* ── Loading States ──────────────────────────────────────────────────── */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,17,23,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 1000;
+  opacity: 1;
+  transition: opacity 0.3s;
+}
+
+.loading-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+/* ── Tooltip ─────────────────────────────────────────────────────────── */
+.tooltip {
+  position: fixed;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  color: var(--text);
+  pointer-events: none;
+  z-index: 500;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transition: opacity 0.15s;
+  max-width: 200px;
+}
+
+.tooltip.show { opacity: 1; }
+
+.tooltip .tt-team { font-weight: 700; }
+.tooltip .tt-prob { color: var(--accent); font-weight: 600; }
+.tooltip .tt-label { color: var(--text-dim); font-size: 0.72rem; }
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .sidebar {
+    width: 200px;
+    min-width: 200px;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 600px) {
+  .app { flex-direction: column; }
+  .sidebar {
+    width: 100%;
+    max-height: none;
+    position: relative;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 10px;
+    gap: 8px;
+  }
+  .sidebar-section { flex: 1; min-width: 120px; }
+}

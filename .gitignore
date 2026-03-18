@@ -33,5 +33,7 @@ models/*.cbm
 models/*.json
 models/*.xgb
 
-# HTML exports
+# HTML exports (exclude static/ from this rule)
 *.html
+!static/
+!static/**

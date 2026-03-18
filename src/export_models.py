@@ -26,12 +26,72 @@ from src import data_loader, features
 
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # Best validated feature set (from experiment leaderboard)
 TOP4Q_ELO = ["Diff_seed", "Diff_PointDiff", "Diff_OffEff", "Diff_WinPct",
              "Diff_quality", "Diff_Elo"]
 
 CURRENT_SEASON = 2026
+
+
+def models_are_fresh(
+    model_dir: Path | None = None,
+    max_age_hours: float = 24,
+) -> bool:
+    """Check whether exported models exist and are recent enough.
+
+    Args:
+        model_dir: Directory containing model artifacts.
+        max_age_hours: Maximum age in hours before models are stale.
+
+    Returns:
+        True if models exist and were created within *max_age_hours*.
+    """
+    import time
+
+    model_dir = model_dir or MODELS_DIR
+    config_path = model_dir / "config.json"
+    if not config_path.exists():
+        return False
+
+    age_hours = (time.time() - config_path.stat().st_mtime) / 3600
+    return age_hours < max_age_hours
+
+
+def ensure_models(
+    model_dir: Path | None = None,
+    data_dir: Path | None = None,
+    max_age_hours: float = 24,
+    current_season: int = CURRENT_SEASON,
+) -> dict:
+    """Download fresh data and (re)train models if they're stale.
+
+    Args:
+        model_dir: Where to save model artifacts.
+        data_dir: Where to download/find CSV data.
+        max_age_hours: Staleness threshold.
+        current_season: Season year for feature computation.
+
+    Returns:
+        Model config dict.
+    """
+    model_dir = model_dir or MODELS_DIR
+    data_dir = data_dir or DATA_DIR
+
+    if models_are_fresh(model_dir, max_age_hours):
+        print(f"Models are fresh (< {max_age_hours}h old). Skipping retrain.")
+        with open(model_dir / "config.json") as f:
+            return json.load(f)
+
+    # Try downloading latest data (non-fatal if Kaggle CLI unavailable)
+    try:
+        data_loader.download_latest_data(data_dir)
+    except Exception as e:
+        print(f"Warning: Could not download latest data: {e}")
+        print("Using existing data files.")
+
+    return train_and_export(model_dir, current_season)
 
 
 def train_and_export(
