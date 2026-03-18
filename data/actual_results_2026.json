@@ -1,0 +1,9 @@
+{
+  "description": "Actual 2026 NCAA tournament results. Update as games are played.",
+  "last_updated": "2026-03-18",
+  "men": {
+    "Y16": {"winner_id": 1224, "winner_name": "Howard", "score": "86-83", "loser_id": 1420, "loser_name": "UMBC", "round": "Play-In"},
+    "Z11": {"winner_id": 1400, "winner_name": "Texas", "score": "68-66", "loser_id": 1301, "loser_name": "NC State", "round": "Play-In"}
+  },
+  "women": {}
+}

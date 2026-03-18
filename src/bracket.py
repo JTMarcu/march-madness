@@ -16,6 +16,8 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
+ACTUAL_RESULTS_FILE = Path(__file__).resolve().parent.parent / "data" / "actual_results_2026.json"
+
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -219,6 +221,28 @@ class BracketSimulator:
 
         # User overrides: slot → TeamID (user-selected winner)
         self.overrides: dict[str, int] = {}
+
+        # Actual results: slot → dict with winner_id, score, etc.
+        # These are locked — users can't override them.
+        self.actual_results: dict[str, dict] = {}
+        self._load_actual_results()
+
+    def _load_actual_results(self) -> None:
+        """Load actual tournament results from JSON and apply them."""
+        if not ACTUAL_RESULTS_FILE.exists():
+            return
+        try:
+            with open(ACTUAL_RESULTS_FILE) as f:
+                data = json.load(f)
+            key = "men" if self.gender == "M" else "women"
+            results = data.get(key, {})
+            for slot, info in results.items():
+                winner_id = info.get("winner_id")
+                if winner_id is not None:
+                    self.results[slot] = winner_id
+                    self.actual_results[slot] = info
+        except (json.JSONDecodeError, KeyError):
+            pass
 
     def _load_seeds(self) -> pd.DataFrame:
         """Load tournament seeds for this season."""

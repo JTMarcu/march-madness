@@ -1,7 +1,6 @@
-"""March Madness Bracket Predictor — Streamlit App with SVG Bracket.
+"""🏆 Interactive Bracket Predictor.
 
-Interactive tournament bracket with traditional bracket visualization.
-Run with: streamlit run app.py
+Full bracket visualization with pick interface.
 """
 
 import sys
@@ -12,42 +11,42 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# Ensure src/ is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.bracket import BracketPredictor, BracketSimulator, ROUND_NAMES, REGION_NAMES
 
-MODELS_DIR = Path(__file__).resolve().parent / "models"
-DATA_DIR = Path(__file__).resolve().parent / "data"
+MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+st.set_page_config(
+    page_title="Bracket Predictor",
+    page_icon="🏆",
+    layout="wide",
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # SVG Layout Constants
 # ═══════════════════════════════════════════════════════════════════════════
-BOX_W = 95       # team-name box width
-BOX_H = 18       # team-name box height
-CONN_W = 10      # connector-line horizontal span
-GAME_H = BOX_H * 2 + 2          # 38 px per game (2 teams + divider)
-GAME_GAP = 6                     # vertical gap between R1 games
-REGION_GAP = 30                  # gap between top / bottom regions
-PAD = 20                         # SVG padding
-COL_W = BOX_W + CONN_W          # 105 px per round column
+BOX_W = 95
+BOX_H = 18
+CONN_W = 10
+GAME_H = BOX_H * 2 + 2
+GAME_GAP = 6
+REGION_GAP = 30
+PAD = 20
+COL_W = BOX_W + CONN_W
 
-# Standard NCAA bracket visual order for R1 within a region
-# 1v16, 8v9, 5v12, 4v13, 6v11, 3v14, 7v10, 2v15
 R1_ORDER = [1, 8, 5, 4, 6, 3, 7, 2]
 R2_ORDER = [1, 4, 3, 2]
 R3_ORDER = [1, 2]
 R4_ORDER = [1]
 
-# Derived layout values
-REGION_H = 8 * (GAME_H + GAME_GAP) - GAME_GAP  # 346
-SVG_H = PAD * 2 + REGION_H * 2 + REGION_GAP     # 762
-
-LEFT_X = [PAD + i * COL_W for i in range(5)]     # R1, R2, S16, E8, FF
-CH_X = PAD + 5 * COL_W                            # championship column
-RIGHT_X = [CH_X + BOX_W + CONN_W + i * COL_W for i in range(5)]  # FF..R1
+REGION_H = 8 * (GAME_H + GAME_GAP) - GAME_GAP
+SVG_H = PAD * 2 + REGION_H * 2 + REGION_GAP
+LEFT_X = [PAD + i * COL_W for i in range(5)]
+CH_X = PAD + 5 * COL_W
+RIGHT_X = [CH_X + BOX_W + CONN_W + i * COL_W for i in range(5)]
 SVG_W = RIGHT_X[4] + BOX_W + PAD
-
 TOP_Y = PAD
 BOT_Y = PAD + REGION_H + REGION_GAP
 
@@ -55,20 +54,8 @@ HEADERS_L = ["R64", "R32", "Sweet 16", "Elite 8", "Final Four"]
 HEADERS_R = ["Final Four", "Elite 8", "Sweet 16", "R32", "R64"]
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Page config & cached loading
-# ═══════════════════════════════════════════════════════════════════════════
-st.set_page_config(
-    page_title="March Madness Bracket Predictor",
-    page_icon="🏀",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-
 @st.cache_resource
 def load_predictor() -> BracketPredictor:
-    """Load trained models (cached across reruns)."""
     return BracketPredictor(MODELS_DIR)
 
 
@@ -81,10 +68,9 @@ def check_models_exist() -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SVG primitive helpers
+# SVG helpers
 # ═══════════════════════════════════════════════════════════════════════════
 def _game_centers(n: int, y_start: float) -> list[float]:
-    """Y-centres for *n* games starting at *y_start* (top of first game)."""
     return [y_start + i * (GAME_H + GAME_GAP) + GAME_H / 2 for i in range(n)]
 
 
@@ -106,22 +92,21 @@ def _seed_num(sim: BracketSimulator, tid: int) -> Optional[int]:
 
 
 def _trunc(name: str, maxlen: int = 12) -> str:
-    return name if len(name) <= maxlen else name[: maxlen - 1] + "\u2026"
+    return name if len(name) <= maxlen else name[:maxlen - 1] + "\u2026"
 
 
 def _esc(text: str) -> str:
-    """Escape text for SVG/XML."""
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _team_box(x: float, y: float, name: str, seed: Optional[int],
               is_winner: bool = False, score: Optional[int] = None,
               is_actual: bool = False) -> str:
+    """Render one team box in SVG."""
     if name in ("TBD", None, ""):
         fill, stroke, tfill = "#f0f0f0", "#ddd", "#bbb"
         weight, display = "normal", "TBD"
     elif is_winner and is_actual:
-        # Gold/bronze for actual confirmed winners
         fill, stroke, tfill = "#fff3cd", "#ffc107", "#856404"
         weight = "bold"
         display = f"{seed} {_trunc(name)}" if seed else _trunc(name)
@@ -130,7 +115,6 @@ def _team_box(x: float, y: float, name: str, seed: Optional[int],
         weight = "bold"
         display = f"{seed} {_trunc(name)}" if seed else _trunc(name)
     elif is_actual and not is_winner:
-        # Actual loser — muted red
         fill, stroke, tfill = "#f8d7da", "#dc3545", "#721c24"
         weight = "normal"
         display = f"{seed} {_trunc(name)}" if seed else _trunc(name)
@@ -157,7 +141,6 @@ def _team_box(x: float, y: float, name: str, seed: Optional[int],
 
 
 def _game_box(x: float, cy: float, gd: dict) -> str:
-    """Two team boxes for one game, centred at *cy*."""
     top_y = cy - GAME_H / 2
     bot_y = top_y + BOX_H + 2
     winner = gd.get("winner_id")
@@ -173,12 +156,8 @@ def _game_box(x: float, cy: float, gd: dict) -> str:
 
 def _connector(x_edge: float, y1: float, y2: float,
                x_next: float, direction: str = "right") -> str:
-    """Bracket connector: two horizontals, one vertical, one horizontal."""
     ym = (y1 + y2) / 2
-    if direction == "right":
-        mx = x_edge + CONN_W / 2
-    else:
-        mx = x_edge - CONN_W / 2
+    mx = x_edge + CONN_W / 2 if direction == "right" else x_edge - CONN_W / 2
     return (
         f'<line x1="{x_edge}" y1="{y1}" x2="{mx}" y2="{y1}" '
         f'stroke="#999" stroke-width="1"/>\n'
@@ -204,7 +183,6 @@ def _collect_games(sim: BracketSimulator,
         prob = sim.probabilities.get(slot)
         if prob is None and s_id is not None and w_id is not None:
             prob = predictor.predict_matchup(s_id, w_id, sim.season, sim.gender)
-        # Predict scores (gracefully handle missing method or data)
         strong_score, weak_score = None, None
         if prob is not None and s_id is not None and w_id is not None:
             try:
@@ -213,7 +191,7 @@ def _collect_games(sim: BracketSimulator,
             except (AttributeError, Exception):
                 pass
 
-        # Use actual scores if available
+        # Overlay actual scores
         actual = sim.actual_results.get(slot)
         if actual:
             score_str = actual.get("score", "")
@@ -251,27 +229,20 @@ def _collect_games(sim: BracketSimulator,
 # ═══════════════════════════════════════════════════════════════════════════
 def render_bracket_svg(sim: BracketSimulator,
                        predictor: BracketPredictor) -> str:
-    """Build a full SVG bracket and return the HTML string."""
     games = _collect_games(sim, predictor)
 
-    # Detect regions
     r1_slots = sim.slots[sim.slots["Slot"].str.match(r"^R1[A-Z]")]
     regions = sorted(r1_slots["Slot"].str[2].unique())
     if len(regions) < 4:
         return "<p style='color:red;'>Need 4 regions for bracket.</p>"
 
-    # Standard NCAA bracket layout matching the official bracket:
-    # Left side:  top = East (W), bottom = South (X)
-    # Right side: top = West (Z), bottom = Midwest (Y)
-    # Fallback: alphabetical if regions differ
     region_layout = {"W": 0, "X": 1, "Z": 2, "Y": 3}
     ordered = sorted(regions, key=lambda r: region_layout.get(r, ord(r)))
     left_top, left_bot, right_top, right_bot = ordered
 
     parts: list[str] = []
 
-    # ── y-centres per region ──────────────────────────────────────────────
-    def _ypos(y0: float):
+    def _ypos(y0):
         r1 = _game_centers(8, y0)
         r2 = _midpoints(r1)
         r3 = _midpoints(r2)
@@ -283,7 +254,7 @@ def render_bracket_svg(sim: BracketSimulator,
     rt1, rt2, rt3, rt4 = _ypos(TOP_Y)
     rb1, rb2, rb3, rb4 = _ypos(BOT_Y)
 
-    # ── round headers ─────────────────────────────────────────────────────
+    # Headers
     hy = PAD - 6
     for i, lbl in enumerate(HEADERS_L):
         cx = LEFT_X[i] + BOX_W / 2
@@ -300,7 +271,7 @@ def render_bracket_svg(sim: BracketSimulator,
             f'<text x="{cx}" y="{hy}" text-anchor="middle" font-size="7" '
             f'fill="#888" font-family="Arial">{lbl}</text>\n')
 
-    # ── region labels ─────────────────────────────────────────────────────
+    # Region labels
     for reg, ystart, anchor, xref in [
         (left_top,  TOP_Y, "start", LEFT_X[0]),
         (left_bot,  BOT_Y, "start", LEFT_X[0]),
@@ -312,7 +283,6 @@ def render_bracket_svg(sim: BracketSimulator,
             f'font-size="8" fill="#555" font-weight="bold" '
             f'font-family="Arial">{REGION_NAMES.get(reg, reg)}</text>\n')
 
-    # ── helper: draw one round column for a region ────────────────────────
     def _draw_round(region, order, centers, col_x,
                     next_centers, next_col_x, direction, rnd):
         out = []
@@ -320,7 +290,6 @@ def render_bracket_svg(sim: BracketSimulator,
             slot = f"{rnd}{region}{sn}"
             if slot in games:
                 out.append(_game_box(col_x, centers[i], games[slot]))
-        # connectors to next round
         if next_centers is not None and next_col_x is not None:
             if direction == "right":
                 ex = col_x + BOX_W
@@ -336,46 +305,36 @@ def render_bracket_svg(sim: BracketSimulator,
                                           next_col_x + BOX_W, "left"))
         return "".join(out)
 
-    # ── left side ─────────────────────────────────────────────────────────
+    # Left side
     for reg, y1, y2, y3, y4 in [
         (left_top, lt1, lt2, lt3, lt4),
         (left_bot, lb1, lb2, lb3, lb4),
     ]:
-        parts.append(_draw_round(reg, R1_ORDER, y1, LEFT_X[0],
-                                 y2, LEFT_X[1], "right", "R1"))
-        parts.append(_draw_round(reg, R2_ORDER, y2, LEFT_X[1],
-                                 y3, LEFT_X[2], "right", "R2"))
-        parts.append(_draw_round(reg, R3_ORDER, y3, LEFT_X[2],
-                                 y4, LEFT_X[3], "right", "R3"))
-        parts.append(_draw_round(reg, R4_ORDER, y4, LEFT_X[3],
-                                 None, None, "right", "R4"))
+        parts.append(_draw_round(reg, R1_ORDER, y1, LEFT_X[0], y2, LEFT_X[1], "right", "R1"))
+        parts.append(_draw_round(reg, R2_ORDER, y2, LEFT_X[1], y3, LEFT_X[2], "right", "R2"))
+        parts.append(_draw_round(reg, R3_ORDER, y3, LEFT_X[2], y4, LEFT_X[3], "right", "R3"))
+        parts.append(_draw_round(reg, R4_ORDER, y4, LEFT_X[3], None, None, "right", "R4"))
 
-    # ── right side ────────────────────────────────────────────────────────
+    # Right side
     for reg, y1, y2, y3, y4 in [
         (right_top, rt1, rt2, rt3, rt4),
         (right_bot, rb1, rb2, rb3, rb4),
     ]:
-        parts.append(_draw_round(reg, R1_ORDER, y1, RIGHT_X[4],
-                                 y2, RIGHT_X[3], "left", "R1"))
-        parts.append(_draw_round(reg, R2_ORDER, y2, RIGHT_X[3],
-                                 y3, RIGHT_X[2], "left", "R2"))
-        parts.append(_draw_round(reg, R3_ORDER, y3, RIGHT_X[2],
-                                 y4, RIGHT_X[1], "left", "R3"))
-        parts.append(_draw_round(reg, R4_ORDER, y4, RIGHT_X[1],
-                                 None, None, "left", "R4"))
+        parts.append(_draw_round(reg, R1_ORDER, y1, RIGHT_X[4], y2, RIGHT_X[3], "left", "R1"))
+        parts.append(_draw_round(reg, R2_ORDER, y2, RIGHT_X[3], y3, RIGHT_X[2], "left", "R2"))
+        parts.append(_draw_round(reg, R3_ORDER, y3, RIGHT_X[2], y4, RIGHT_X[1], "left", "R3"))
+        parts.append(_draw_round(reg, R4_ORDER, y4, RIGHT_X[1], None, None, "left", "R4"))
 
-    # ── E8 → FF connectors ───────────────────────────────────────────────
+    # E8 → FF connectors
     lt_e8, lb_e8 = lt4[0], lb4[0]
     rt_e8, rb_e8 = rt4[0], rb4[0]
     ff_l_y = (lt_e8 + lb_e8) / 2
     ff_r_y = (rt_e8 + rb_e8) / 2
 
-    parts.append(_connector(LEFT_X[3] + BOX_W, lt_e8, lb_e8,
-                            LEFT_X[4], "right"))
-    parts.append(_connector(RIGHT_X[1], rt_e8, rb_e8,
-                            RIGHT_X[0] + BOX_W, "left"))
+    parts.append(_connector(LEFT_X[3] + BOX_W, lt_e8, lb_e8, LEFT_X[4], "right"))
+    parts.append(_connector(RIGHT_X[1], rt_e8, rb_e8, RIGHT_X[0] + BOX_W, "left"))
 
-    # ── Final Four games ──────────────────────────────────────────────────
+    # Final Four
     ff_slots = sim.slots[sim.slots["Slot"].str.startswith("R5")].sort_values("Slot")
     ff_names = ff_slots["Slot"].tolist()
     if len(ff_names) >= 1 and ff_names[0] in games:
@@ -383,7 +342,7 @@ def render_bracket_svg(sim: BracketSimulator,
     if len(ff_names) >= 2 and ff_names[1] in games:
         parts.append(_game_box(RIGHT_X[0], ff_r_y, games[ff_names[1]]))
 
-    # ── FF → Championship connectors ─────────────────────────────────────
+    # Championship
     ch_y = (ff_l_y + ff_r_y) / 2
     parts.append(
         f'<line x1="{LEFT_X[4] + BOX_W}" y1="{ff_l_y}" '
@@ -392,7 +351,6 @@ def render_bracket_svg(sim: BracketSimulator,
         f'<line x1="{RIGHT_X[0]}" y1="{ff_r_y}" '
         f'x2="{CH_X + BOX_W}" y2="{ch_y}" stroke="#999" stroke-width="1"/>\n')
 
-    # ── Championship game ─────────────────────────────────────────────────
     ch_slots = sim.slots[sim.slots["Slot"].str.startswith("R6")]
     if len(ch_slots) > 0:
         ch_slot = ch_slots.iloc[0]["Slot"]
@@ -405,9 +363,8 @@ def render_bracket_svg(sim: BracketSimulator,
                     f'<text x="{CH_X + BOX_W / 2}" y="{ch_y + GAME_H / 2 + 15}" '
                     f'text-anchor="middle" font-size="10" fill="#c0392b" '
                     f'font-weight="bold" font-family="Arial">'
-                    f'\U0001F3C6 {cname}</text>\n')
+                    f'🏆 {cname}</text>\n')
 
-    # ── assemble SVG ──────────────────────────────────────────────────────
     svg = (
         f'<svg viewBox="0 0 {SVG_W} {SVG_H}" '
         f'xmlns="http://www.w3.org/2000/svg" '
@@ -420,10 +377,9 @@ def render_bracket_svg(sim: BracketSimulator,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Downstream dependency tracking
+# Pick interface
 # ═══════════════════════════════════════════════════════════════════════════
 def _clear_downstream(sim: BracketSimulator, slot: str) -> None:
-    """Recursively clear results that depend on *slot*."""
     for _, row in sim.slots.iterrows():
         if row["StrongSeed"] == slot or row["WeakSeed"] == slot:
             child = row["Slot"]
@@ -435,9 +391,6 @@ def _clear_downstream(sim: BracketSimulator, slot: str) -> None:
             _clear_downstream(sim, child)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Pick interface
-# ═══════════════════════════════════════════════════════════════════════════
 def _render_game_pick(sim: BracketSimulator,
                       predictor: BracketPredictor,
                       gd: dict, slot: str) -> bool:
@@ -448,6 +401,17 @@ def _render_game_pick(sim: BracketSimulator,
         st.caption(f"*{slot}: Awaiting prior results*")
         return False
 
+    # Lock actual results — display only, no interaction
+    if gd.get("is_actual", False):
+        winner = gd.get("winner_id")
+        w_name = gd["strong_name"] if winner == t1 else gd["weak_name"]
+        l_name = gd["weak_name"] if winner == t1 else gd["strong_name"]
+        w_score = gd.get("strong_score") if winner == t1 else gd.get("weak_score")
+        l_score = gd.get("weak_score") if winner == t1 else gd.get("strong_score")
+        score_str = f" {w_score}-{l_score}" if w_score and l_score else ""
+        st.success(f"✅ **{w_name}** def. {l_name}{score_str}", icon="🏀")
+        return False
+
     s1 = f"({gd['strong_seed']}) " if gd.get("strong_seed") else ""
     s2 = f"({gd['weak_seed']}) " if gd.get("weak_seed") else ""
     prob = gd.get("probability") or 0.5
@@ -455,23 +419,18 @@ def _render_game_pick(sim: BracketSimulator,
     ws = gd.get("weak_score")
     score_str1 = f" [{ss}]" if ss is not None else ""
     score_str2 = f" [{ws}]" if ws is not None else ""
-    label1 = f"{s1}{gd['strong_name']}{score_str1} \u2014 {prob:.0%}"
-    label2 = f"{s2}{gd['weak_name']}{score_str2} \u2014 {1 - prob:.0%}"
+    label1 = f"{s1}{gd['strong_name']}{score_str1} — {prob:.0%}"
+    label2 = f"{s2}{gd['weak_name']}{score_str2} — {1 - prob:.0%}"
 
     current = sim.results.get(slot)
     idx = 1 if current == t2 else 0
 
-    # Use team IDs as values (stable across reruns) with formatted labels
     labels = {t1: label1, t2: label2}
     pick_key = f"pick_{slot}"
     chosen = st.radio(
-        slot,
-        [t1, t2],
-        index=idx,
+        slot, [t1, t2], index=idx,
         format_func=lambda tid: labels.get(tid, str(tid)),
-        key=pick_key,
-        horizontal=True,
-        label_visibility="collapsed",
+        key=pick_key, horizontal=True, label_visibility="collapsed",
     )
 
     new_winner = chosen
@@ -485,24 +444,19 @@ def _render_game_pick(sim: BracketSimulator,
 
 def render_pick_interface(sim: BracketSimulator,
                           predictor: BracketPredictor) -> bool:
-    """Render the round-by-round pick interface. Returns True if anything changed."""
     games = _collect_games(sim, predictor)
     changed = False
 
-    # Detect regions — order to match bracket layout
     r1_slots = sim.slots[sim.slots["Slot"].str.match(r"^R1[A-Z]")]
     region_layout = {"W": 0, "X": 1, "Z": 2, "Y": 3}
     regions = sorted(r1_slots["Slot"].str[2].unique(),
                      key=lambda r: region_layout.get(r, ord(r)))
 
-    # Play-in slots
     playin_slots = sorted([s for s in games if not s.startswith("R")])
-
     tab_names = ["Play-In", "R64", "R32", "Sweet 16", "Elite 8",
                  "Final Four", "Championship"]
     tabs = st.tabs(tab_names)
 
-    # ── Play-In ───────────────────────────────────────────────────────────
     playin_changed = False
     with tabs[0]:
         if not playin_slots:
@@ -515,17 +469,10 @@ def render_pick_interface(sim: BracketSimulator,
                         changed = True
                         playin_changed = True
 
-    # Re-collect games after play-in picks so R64+ sees updated teams
     if playin_changed:
         games = _collect_games(sim, predictor)
 
-    # ── Rounds 1-4 (region-based) ─────────────────────────────────────────
-    round_cfgs = [
-        (1, "R1", 4),
-        (2, "R2", 4),
-        (3, "R3", 4),
-        (4, "R4", 4),
-    ]
+    round_cfgs = [(1, "R1", 4), (2, "R2", 4), (3, "R3", 4), (4, "R4", 4)]
     for round_num, prefix, ncols in round_cfgs:
         with tabs[round_num]:
             for region in regions:
@@ -545,7 +492,6 @@ def render_pick_interface(sim: BracketSimulator,
                             changed = True
                 st.divider()
 
-    # ── Final Four ────────────────────────────────────────────────────────
     with tabs[5]:
         ff_slots = sorted(s for s in games if s.startswith("R5"))
         if not ff_slots:
@@ -557,7 +503,6 @@ def render_pick_interface(sim: BracketSimulator,
                     if _render_game_pick(sim, predictor, games[slot], slot):
                         changed = True
 
-    # ── Championship ──────────────────────────────────────────────────────
     with tabs[6]:
         ch_slots = sorted(s for s in games if s.startswith("R6"))
         for slot in ch_slots:
@@ -565,52 +510,41 @@ def render_pick_interface(sim: BracketSimulator,
                 changed = True
         champ = sim.get_champion()
         if champ:
-            st.success(f"\U0001F3C6 **Champion: {predictor.team_name(champ)}**")
+            st.success(f"🏆 **Champion: {predictor.team_name(champ)}**")
 
     return changed
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Main app
+# Main
 # ═══════════════════════════════════════════════════════════════════════════
 def main():
-    st.title("\U0001F3C0 March Madness Bracket Predictor")
+    st.title("🏆 Bracket Predictor")
 
     if not check_models_exist():
-        st.error(
-            "**Models not found!** Run:\n\n"
-            "```bash\npython -m src.export_models\n```"
-        )
+        st.error("**Models not found!** Run `python -m src.export_models` first.")
         st.stop()
 
     predictor = load_predictor()
 
-    # ── Sidebar ───────────────────────────────────────────────────────────
+    # Sidebar
     st.sidebar.header("Settings")
-
-    gender = st.sidebar.radio("Tournament", ["Men's", "Women's"])
+    gender = st.sidebar.radio("Tournament", ["Men's", "Women's"], key="brk_gender")
     gender_code = "M" if gender == "Men's" else "W"
 
     current_season = predictor.config.get("current_season", 2026)
     season = st.sidebar.number_input(
         "Season", min_value=2011, max_value=current_season,
         value=current_season,
-        help="Current year for predictions, or a past year to test.",
     )
 
-    # Verify seeds
     pfx = "M" if gender_code == "M" else "W"
     seeds_df = pd.read_csv(DATA_DIR / f"{pfx}NCAATourneySeeds.csv")
     avail = sorted(seeds_df["Season"].unique())
     if season not in avail:
-        st.warning(
-            f"No seeds for {season} {gender} tournament. "
-            f"Available: {avail[-5:]}"
-        )
-        season = st.sidebar.selectbox(
-            "Pick a past season:",
-            sorted(avail, reverse=True)[:10],
-        )
+        st.warning(f"No seeds for {season}. Available: {avail[-5:]}")
+        season = st.sidebar.selectbox("Pick a past season:",
+                                       sorted(avail, reverse=True)[:10])
 
     sim_mode = st.sidebar.radio(
         "Mode",
@@ -618,101 +552,68 @@ def main():
     )
     mode = "deterministic" if "Deterministic" in sim_mode else "probabilistic"
 
-    # Initialise simulator
     sim_key = f"sim_{gender_code}_{season}"
     if sim_key not in st.session_state:
         st.session_state[sim_key] = BracketSimulator(
-            predictor, season, gender_code, DATA_DIR
-        )
+            predictor, season, gender_code, DATA_DIR)
     sim = st.session_state[sim_key]
 
     # Action buttons
     c1, c2, c3 = st.sidebar.columns(3)
     with c1:
-        if st.button("\U0001F916 Auto-Fill", key="btn_auto"):
+        if st.button("🤖 Auto-Fill", key="btn_auto"):
             sim.results.clear()
             sim.probabilities.clear()
             sim.simulate_full_bracket(mode=mode)
+            # Re-apply actual results (they should always override)
+            sim._load_actual_results()
             for k in list(st.session_state.keys()):
                 if k.startswith("pick_"):
                     del st.session_state[k]
             st.rerun()
     with c2:
-        if st.button("\U0001F504 Reset", key="btn_reset"):
+        if st.button("🔄 Reset", key="btn_reset"):
             st.session_state[sim_key] = BracketSimulator(
-                predictor, season, gender_code, DATA_DIR
-            )
+                predictor, season, gender_code, DATA_DIR)
             for k in list(st.session_state.keys()):
                 if k.startswith("pick_"):
                     del st.session_state[k]
             st.rerun()
     with c3:
-        if st.button("\U0001F3B2 Random", key="btn_rand"):
+        if st.button("🎲 Random", key="btn_rand"):
             sim.results.clear()
             sim.probabilities.clear()
             sim.simulate_full_bracket(mode="probabilistic")
+            sim._load_actual_results()
             for k in list(st.session_state.keys()):
                 if k.startswith("pick_"):
                     del st.session_state[k]
             st.rerun()
 
-    # Sidebar: seeded teams
-    with st.sidebar.expander("\U0001F4CB Seeded Teams", expanded=False):
+    with st.sidebar.expander("📋 Seeds", expanded=False):
         sd = sim.seeds.copy()
         sd["Team"] = sd["TeamID"].apply(predictor.team_name)
         sd = sd[["Seed", "Team", "TeamID"]].sort_values("Seed")
         st.dataframe(sd, hide_index=True, use_container_width=True)
 
-    # Sidebar: model info
-    with st.sidebar.expander("\U0001F4CA Model Info", expanded=False):
-        st.write(f"**Type:** Split M/W {predictor.config.get('model_type', 'logreg').upper()}")
-        st.write(f"**Features:** {', '.join(predictor.features)}")
-        st.write(f"**Training:** {predictor.config['n_men_games']}M + "
-                 f"{predictor.config['n_women_games']}W games")
-        st.write(f"**Regularization:** C={predictor.config.get('model_params', {}).get('C', '?')}")
-        st.write(f"**Metric:** MSE (Brier score) — lower is better")
-
-    # Sidebar: tournament progress (actual results)
-    with st.sidebar.expander("\U0001F3C6 Tournament Progress", expanded=False):
-        pfx_file = "M" if gender_code == "M" else "W"
-        try:
-            actual = pd.read_csv(DATA_DIR / f"{pfx_file}NCAATourneyCompactResults.csv")
-            actual = actual[actual["Season"] == season]
-            if len(actual) == 0:
-                st.caption("No results yet — tournament hasn't started or data not updated.")
-            else:
-                st.success(f"**{len(actual)} games played**")
-                teams_df = pd.read_pickle(MODELS_DIR / "teams.pkl") if (MODELS_DIR / "teams.pkl").exists() else None
-                for _, g in actual.sort_values("DayNum").iterrows():
-                    wname = predictor.team_name(int(g["WTeamID"]))
-                    lname = predictor.team_name(int(g["LTeamID"]))
-                    st.write(f"{wname} **{int(g['WScore'])}** — {lname} {int(g['LScore'])}")
-        except Exception:
-            st.caption("Could not load tournament results.")
-
-    # ── Model info banner ─────────────────────────────────────────────────
-    feat_str = ", ".join(f.replace("Diff_", "") for f in predictor.features)
-    model_type = predictor.config.get("model_type", "logreg").upper()
-    n_m = predictor.config.get("n_men_games", "?")
-    n_w = predictor.config.get("n_women_games", "?")
-    st.info(
-        f"**Model:** Split M/W {model_type} "
-        f"({n_m} men\'s + {n_w} women\'s games, 2010\u20132025)  \n"
-        f"**Features:** {feat_str}  \n"
-        f"**Predictions clipped to [0.025, 0.975]**",
-        icon="\U0001F916",
+    # SVG legend
+    st.markdown(
+        '<div style="font-size:12px;margin-bottom:8px;">'
+        '<span style="background:#fff3cd;border:1px solid #ffc107;padding:2px 6px;border-radius:3px;">🏀 Actual Result</span> '
+        '<span style="background:#c3e6cb;border:1px solid #28a745;padding:2px 6px;border-radius:3px;">Predicted Winner</span> '
+        '<span style="background:#f8d7da;border:1px solid #dc3545;padding:2px 6px;border-radius:3px;">Actual Loser</span>'
+        '</div>',
+        unsafe_allow_html=True,
     )
 
-    # ── Bracket SVG — rendered in a placeholder so picks update it ────────
+    # Bracket SVG
     st.markdown(f"### {season} NCAA {gender} Tournament Bracket")
     bracket_placeholder = st.empty()
 
-    # ── Pick interface (processed BEFORE SVG fills placeholder) ────────────
     st.markdown("---")
-    st.subheader("\U0001F4DD Fill Your Bracket")
+    st.subheader("📝 Fill Your Bracket")
     something_changed = render_pick_interface(sim, predictor)
 
-    # Now render SVG with up-to-date sim.results
     with bracket_placeholder.container():
         svg_html = render_bracket_svg(sim, predictor)
         st.markdown(
@@ -724,10 +625,10 @@ def main():
     if something_changed:
         st.rerun()
 
-    # ── Bracket summary table ─────────────────────────────────────────────
+    # Summary table
     if sim.results:
         st.markdown("---")
-        st.subheader("\U0001F4CA Results Summary")
+        st.subheader("📊 Results Summary")
         summary = sim.get_bracket_summary()
         filled = [s for s in summary if s["winner_id"] is not None]
         if filled:
@@ -736,35 +637,25 @@ def main():
                       "winner_name", "probability"]]
             df.columns = ["Round", "Team 1", "Team 2", "Winner", "P(Team 1)"]
             df["P(Team 1)"] = df["P(Team 1)"].apply(
-                lambda x: f"{x:.1%}" if x is not None else "\u2014")
+                lambda x: f"{x:.1%}" if x is not None else "—")
             st.dataframe(df, hide_index=True, use_container_width=True)
 
-    # ── Matchup Explorer ──────────────────────────────────────────────────
+    # Matchup Explorer
     st.markdown("---")
-    st.subheader("\U0001F50D Head-to-Head Matchup Explorer")
-
-    teams_list = sorted(
-        sim.seeds["TeamID"].apply(predictor.team_name).tolist())
+    st.subheader("🔍 Head-to-Head Matchup Explorer")
+    teams_list = sorted(sim.seeds["TeamID"].apply(predictor.team_name).tolist())
     mc1, mc2 = st.columns(2)
     with mc1:
         t1_name = st.selectbox("Team 1", teams_list, key="explore_t1")
     with mc2:
-        t2_name = st.selectbox(
-            "Team 2",
-            [t for t in teams_list if t != t1_name],
-            key="explore_t2",
-        )
-
+        t2_name = st.selectbox("Team 2",
+                                [t for t in teams_list if t != t1_name],
+                                key="explore_t2")
     if t1_name and t2_name:
-        t1_ids = sim.seeds[
-            sim.seeds["TeamID"].apply(predictor.team_name) == t1_name
-        ]["TeamID"].values
-        t2_ids = sim.seeds[
-            sim.seeds["TeamID"].apply(predictor.team_name) == t2_name
-        ]["TeamID"].values
+        t1_ids = sim.seeds[sim.seeds["TeamID"].apply(predictor.team_name) == t1_name]["TeamID"].values
+        t2_ids = sim.seeds[sim.seeds["TeamID"].apply(predictor.team_name) == t2_name]["TeamID"].values
         if len(t1_ids) > 0 and len(t2_ids) > 0:
-            prob = predictor.predict_matchup(
-                int(t1_ids[0]), int(t2_ids[0]), season, gender_code)
+            prob = predictor.predict_matchup(int(t1_ids[0]), int(t2_ids[0]), season, gender_code)
             mc1, mc2, mc3 = st.columns([2, 1, 2])
             with mc1:
                 st.metric(t1_name, f"{prob:.1%}")
