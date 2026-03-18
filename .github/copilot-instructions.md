@@ -278,6 +278,7 @@ show_leaderboard()  # See all experiments ranked by average MSE
 - **2026 iteration 2** (`notebooks/march_madness_2026.ipynb`): 25+ experiments. Split M/W strategy discovered — women far more predictable (0.134 vs 0.187 men-only). SOS and shooting % tested but don't beat top4+quality.
 - **2026 iteration 3** (`notebooks/march_madness_2026.ipynb`): Added Elo ratings (game-by-game dynamic ratings) and coach tournament experience. Elo improved split MSE from 0.1614 → 0.1604. Coach experience did not help. Final: split LR with top4+quality+Elo.
 - **2026 iteration 4** (optimization sweep): Exhaustive feature ablation + C-parameter tuning + ensemble testing. Dropped quality (hurts!), added FGPct+FTPct, tuned C=0.25/0.15, tested LR+XGB+LGBM blends. Improved from 0.1604 → 0.1571 (Δ=−0.0033).
+- **2026 iteration 5** (final validation): Tested ALL remaining ideas — Elo hyperparameter sweep (16 configs), Massey ordinals (men-only, 5 systems), isotonic/sigmoid calibration, clipping bounds (9 values), time-weighted training (5 decays), stacking meta-learner, polynomial feature interactions (6 combos), conference strength, ensemble C fine-tuning (13 pairs), ensemble weight fine-tuning (11 configs). Polynomial features looked promising on 3 holdout years (0.1555 MSE) but **failed full 14-year leave-one-year-out validation** (only won 6/14 years). All other ideas hurt. Current 7-feature 3-model ensemble at 0.1571 confirmed as the true optimum.
 
 ## Key Learnings (Empirically Validated)
 1. **Simple logistic regression beats complex models** on ~2K tournament games — the dataset is too small for deep trees
@@ -295,3 +296,12 @@ show_leaderboard()  # See all experiments ranked by average MSE
 13. **FGPct and FTPct each contribute ~0.0003 MSE improvement** — small but consistent across all holdout years. SOS, DefEff, rebounds, assists all hurt.
 14. **Coach tournament experience doesn't help** — despite intuition, coach NCAA tournament appearances add noise rather than signal in multi-year validation
 15. **For bracket picks, model choice barely matters** — all optimized models produce identical bracket predictions (same champion, same Final Four). The differences are in probability calibration for Kaggle scoring.
+16. **Polynomial features overfit** — squared terms and interactions (seed², Elo², PD², seed×PD, seed×Elo) improved MSE on 3 holdout years but failed full 14-year validation (won only 6/14 years). Coefficients were unstable across folds (especially Elo² and seed×Elo). Helped most in seed-diff 5-8 range but not robustly.
+17. **Elo hyperparameters are already near-optimal** — K=20, home_adv=100, carry_over=0.75 is within 0.0008 MSE of all 16 tested configs. No home advantage (H=0) tied the best but wasn't reliably better.
+18. **Massey ordinals don't help even for men-only** — all 5 systems (POM, SAG, MOR, DOL, COL) hurt when added to the 7-feature men's model. Elo already captures the same information.
+19. **Calibration post-processing is risky** — isotonic calibration showed improvement on 3 holdout years but is non-parametric and likely overfits with ~200 games per fold. LogReg is already well-calibrated.
+20. **Time-weighted training always hurts** — every decay rate tested (0.05–0.30) worsened MSE. All historical tournament data is equally valuable.
+21. **Stacking meta-learner badly hurts** — +0.0063 MSE worse. Not enough data for a meaningful second-stage model.
+22. **Conference strength doesn't help** — average conference win% adds noise (+0.0011 MSE). Seed and Elo already capture team quality.
+23. **Clipping bounds are already optimal** — [0.025, 0.975] is within 0.0001 of all tested bounds. Less aggressive clips always hurt.
+24. **3-holdout validation can mislead** — polynomial features showed clear improvement on 2023/2024/2025 but failed on 8/14 total years. Always validate on ALL available years for final decisions.
