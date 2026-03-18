@@ -45,7 +45,11 @@ def _check_models() -> bool:
 
 def main():
     st.title("🏀 March Madness 2026")
-    st.caption("Model performance tracker & tournament dashboard")
+    st.markdown(
+        "Track how our ML model performs against the real NCAA tournament. "
+        "We predicted win probabilities for every possible matchup — "
+        "now let's see how those predictions hold up."
+    )
 
     if not _check_models():
         st.error("**Models not found!** Run `python -m src.export_models` first.")
@@ -93,12 +97,12 @@ def main():
     # ══════════════════════════════════════════════════════════════════════
     st.markdown("---")
     st.subheader(f"📊 {gender} Tournament — Model Performance")
-    st.caption(f"Results last updated: {last_updated} · Submission: {selected_sub}")
+    st.caption(f"Last updated: {last_updated} · Evaluating: {selected_sub}")
 
     if actual_count == 0:
         st.info(
-            "No actual results recorded yet. Go to **📝 Enter Results** "
-            "to add game outcomes as they're played.",
+            "No actual results recorded yet. Head to **📝 Enter Results** "
+            "in the sidebar to add game outcomes as they're played.",
             icon="📭",
         )
     else:
@@ -113,11 +117,18 @@ def main():
             st.metric("Accuracy", f"{acc:.1%}", delta=f"{n_correct}/{n_preds}")
         with m3:
             mse = metrics.get("mse", 0)
-            # Color code MSE — under 0.20 is good, over 0.25 is bad
-            st.metric("Running MSE", f"{mse:.4f}")
+            st.metric(
+                "Running MSE",
+                f"{mse:.4f}",
+                help="Mean Squared Error — measures how far off our predicted probabilities are from reality. Lower is better. Under 0.20 is strong; over 0.25 needs work.",
+            )
         with m4:
             ll = metrics.get("log_loss", 0)
-            st.metric("Log Loss", f"{ll:.4f}")
+            st.metric(
+                "Log Loss",
+                f"{ll:.4f}",
+                help="Log Loss — penalizes confident wrong predictions harshly. Lower is better.",
+            )
 
         # ── Per-round breakdown ───────────────────────────────────────────
         round_df = compute_round_metrics(perf_df)
@@ -128,7 +139,7 @@ def main():
                 display_rd = round_df.copy()
                 display_rd["Accuracy"] = display_rd["Accuracy"].apply(lambda x: f"{x:.1%}")
                 display_rd["MSE"] = display_rd["MSE"].apply(lambda x: f"{x:.4f}")
-                st.dataframe(display_rd, hide_index=True, use_container_width=True)
+                st.dataframe(display_rd, hide_index=True, width='stretch')
             with c2:
                 # Simple accuracy bar chart
                 chart_data = round_df[["Round", "Accuracy"]].set_index("Round")
@@ -153,7 +164,7 @@ def main():
             st.dataframe(
                 display[show_cols],
                 hide_index=True,
-                use_container_width=True,
+                width='stretch',
                 column_config={
                     "P(Winner)": st.column_config.TextColumn("P(Winner)", help="Model's predicted probability for the actual winner"),
                     "Result": st.column_config.TextColumn("Correct?", width="small"),
@@ -168,38 +179,40 @@ def main():
     c_left, c_right = st.columns([1, 1])
 
     with c_left:
-        st.subheader("🔮 Biggest Upsets")
+        st.subheader("� Surprised Us")
+        st.caption("Games where our model picked the wrong winner")
         if not perf_df.empty:
             upsets = perf_df[perf_df["Correct"] == False].sort_values(
                 "P(Winner)", ascending=True
             )
             if upsets.empty:
-                st.success("No upsets (all predictions correct so far)!")
+                st.success("All predictions correct so far! 🎯")
             else:
-                for _, row in upsets.iterrows():
+                for _, row in upsets.head(5).iterrows():
                     p = row["P(Winner)"]
                     pstr = f"{p:.1%}" if pd.notna(p) else "?"
                     st.write(
-                        f"🔴 **{row['Winner']}** beat {row['Loser']} "
-                        f"({row['Score']}) — we gave them only {pstr}"
+                        f"**{row['Winner']}** beat {row['Loser']} "
+                        f"({row['Score']}) — our model gave them {pstr}"
                     )
         else:
             st.caption("No results yet.")
 
     with c_right:
-        st.subheader("🎯 Best Predictions")
+        st.subheader("🟢 Nailed It")
+        st.caption("Games where our model correctly picked the winner")
         if not perf_df.empty:
             best = perf_df[perf_df["Correct"] == True].sort_values(
                 "P(Winner)", ascending=False
             )
             if best.empty:
-                st.caption("No correct predictions yet.")
+                st.info("No correct predictions yet — early games are often the hardest to call.")
             else:
                 for _, row in best.head(5).iterrows():
                     p = row["P(Winner)"]
                     pstr = f"{p:.1%}" if pd.notna(p) else "?"
                     st.write(
-                        f"🟢 **{row['Winner']}** beat {row['Loser']} "
+                        f"**{row['Winner']}** beat {row['Loser']} "
                         f"({row['Score']}) — predicted at {pstr}"
                     )
         else:
@@ -209,11 +222,12 @@ def main():
     # Navigation hints
     # ══════════════════════════════════════════════════════════════════════
     st.markdown("---")
-    st.markdown(
-        "**Pages:** Use the sidebar to navigate to "
-        "**🏆 Bracket** (interactive predictor) or "
-        "**📝 Enter Results** (add real game outcomes)."
-    )
+    nav1, nav2 = st.columns(2)
+    with nav1:
+        st.info("**🏆 Bracket** — Build your bracket with our model's predictions", icon="👈")
+    with nav2:
+        st.info("**📝 Enter Results** — Add real game outcomes as they happen", icon="👈")
+    st.caption("Use the sidebar to navigate between pages.")
 
 
 if __name__ == "__main__":

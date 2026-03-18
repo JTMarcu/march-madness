@@ -391,14 +391,37 @@ def _clear_downstream(sim: BracketSimulator, slot: str) -> None:
             _clear_downstream(sim, child)
 
 
+def _slot_display(slot: str) -> str:
+    """Convert cryptic slot codes to readable labels.
+
+    Examples: R1W1 → 'East #1', R2X3 → 'South R32 #3', R5WX → 'FF #1'
+    """
+    if not slot.startswith("R"):
+        # Play-in slot like "Y16", "Z11"
+        return f"Play-In ({slot})"
+    rnd = slot[:2]
+    round_labels = {
+        "R1": "R64", "R2": "R32", "R3": "Sweet 16",
+        "R4": "Elite 8", "R5": "Final Four", "R6": "Championship",
+    }
+    rlabel = round_labels.get(rnd, rnd)
+    if rnd in ("R5", "R6"):
+        return rlabel
+    region_code = slot[2] if len(slot) > 2 else ""
+    game_num = slot[3:] if len(slot) > 3 else ""
+    region_name = REGION_NAMES.get(region_code, region_code)
+    return f"{region_name} {rlabel} #{game_num}" if game_num else f"{region_name} {rlabel}"
+
+
 def _render_game_pick(sim: BracketSimulator,
                       predictor: BracketPredictor,
                       gd: dict, slot: str) -> bool:
     """Render a pick widget for one game. Returns True if pick changed."""
     t1 = gd["strong_id"]
     t2 = gd["weak_id"]
+    readable = _slot_display(slot)
     if t1 is None or t2 is None:
-        st.caption(f"*{slot}: Awaiting prior results*")
+        st.caption(f"*{readable}: Awaiting prior results*")
         return False
 
     # Lock actual results — display only, no interaction
@@ -415,12 +438,8 @@ def _render_game_pick(sim: BracketSimulator,
     s1 = f"({gd['strong_seed']}) " if gd.get("strong_seed") else ""
     s2 = f"({gd['weak_seed']}) " if gd.get("weak_seed") else ""
     prob = gd.get("probability") or 0.5
-    ss = gd.get("strong_score")
-    ws = gd.get("weak_score")
-    score_str1 = f" [{ss}]" if ss is not None else ""
-    score_str2 = f" [{ws}]" if ws is not None else ""
-    label1 = f"{s1}{gd['strong_name']}{score_str1} — {prob:.0%}"
-    label2 = f"{s2}{gd['weak_name']}{score_str2} — {1 - prob:.0%}"
+    label1 = f"{s1}{gd['strong_name']} — {prob:.0%}"
+    label2 = f"{s2}{gd['weak_name']} — {1 - prob:.0%}"
 
     current = sim.results.get(slot)
     idx = 1 if current == t2 else 0
@@ -428,7 +447,7 @@ def _render_game_pick(sim: BracketSimulator,
     labels = {t1: label1, t2: label2}
     pick_key = f"pick_{slot}"
     chosen = st.radio(
-        slot, [t1, t2], index=idx,
+        readable, [t1, t2], index=idx,
         format_func=lambda tid: labels.get(tid, str(tid)),
         key=pick_key, horizontal=True, label_visibility="collapsed",
     )
@@ -520,6 +539,10 @@ def render_pick_interface(sim: BracketSimulator,
 # ═══════════════════════════════════════════════════════════════════════════
 def main():
     st.title("🏆 Bracket Predictor")
+    st.markdown(
+        "Build your bracket using our model's win probabilities. "
+        "Use **Auto-Fill** for the model's picks, or choose your own winners below."
+    )
 
     if not check_models_exist():
         st.error("**Models not found!** Run `python -m src.export_models` first.")
@@ -594,14 +617,16 @@ def main():
         sd = sim.seeds.copy()
         sd["Team"] = sd["TeamID"].apply(predictor.team_name)
         sd = sd[["Seed", "Team", "TeamID"]].sort_values("Seed")
-        st.dataframe(sd, hide_index=True, use_container_width=True)
+        st.dataframe(sd, hide_index=True, width='stretch')
 
     # SVG legend
     st.markdown(
         '<div style="font-size:12px;margin-bottom:8px;">'
+        '<b>Legend:</b> '
         '<span style="background:#fff3cd;border:1px solid #ffc107;padding:2px 6px;border-radius:3px;">🏀 Actual Result</span> '
         '<span style="background:#c3e6cb;border:1px solid #28a745;padding:2px 6px;border-radius:3px;">Predicted Winner</span> '
-        '<span style="background:#f8d7da;border:1px solid #dc3545;padding:2px 6px;border-radius:3px;">Actual Loser</span>'
+        '<span style="background:#f8d7da;border:1px solid #dc3545;padding:2px 6px;border-radius:3px;">Actual Loser</span> '
+        '<span style="color:#888;margin-left:8px;">Scores in brackets are model-predicted scores</span>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -612,6 +637,10 @@ def main():
 
     st.markdown("---")
     st.subheader("📝 Fill Your Bracket")
+    st.caption(
+        "Pick winners for each game below. The percentage next to each team is our model's "
+        "predicted win probability. Gold-highlighted games are locked actual results."
+    )
     something_changed = render_pick_interface(sim, predictor)
 
     with bracket_placeholder.container():
@@ -638,7 +667,7 @@ def main():
             df.columns = ["Round", "Team 1", "Team 2", "Winner", "P(Team 1)"]
             df["P(Team 1)"] = df["P(Team 1)"].apply(
                 lambda x: f"{x:.1%}" if x is not None else "—")
-            st.dataframe(df, hide_index=True, use_container_width=True)
+            st.dataframe(df, hide_index=True, width='stretch')
 
     # Matchup Explorer
     st.markdown("---")

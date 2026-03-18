@@ -22,6 +22,41 @@ MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 
+# Round display names for slots
+_ROUND_LABELS = {
+    "R1": "Round of 64",
+    "R2": "Round of 32",
+    "R3": "Sweet 16",
+    "R4": "Elite 8",
+    "R5": "Final Four",
+    "R6": "Championship",
+}
+
+_REGION_NAMES = {
+    "W": "East",
+    "X": "South",
+    "Y": "Midwest",
+    "Z": "West",
+}
+
+
+def _readable_game_label(slot: str, s_name: str, w_name: str) -> str:
+    """Build a human-readable label for a game slot.
+
+    Examples:
+        'R1W1' → 'Round of 64 — East: Duke vs Stetson'
+        'Y16' → 'Play-In: Howard vs UMBC'
+    """
+    if not slot.startswith("R"):
+        return f"Play-In: {s_name} vs {w_name}"
+    rnd = slot[:2]
+    rlabel = _ROUND_LABELS.get(rnd, rnd)
+    if rnd in ("R5", "R6"):
+        return f"{rlabel}: {s_name} vs {w_name}"
+    region_code = slot[2] if len(slot) > 2 else ""
+    region_name = _REGION_NAMES.get(region_code, region_code)
+    return f"{rlabel} — {region_name}: {s_name} vs {w_name}"
+
 st.set_page_config(
     page_title="Enter Results",
     page_icon="📝",
@@ -36,7 +71,11 @@ def load_predictor() -> BracketPredictor:
 
 def main():
     st.title("📝 Enter Tournament Results")
-    st.caption("Add real game outcomes to track model performance")
+    st.markdown(
+        "Record real game outcomes here as they happen. "
+        "Results will appear on the **Dashboard** to track model performance "
+        "and will be locked into the **Bracket** view."
+    )
 
     predictor = load_predictor()
 
@@ -75,7 +114,7 @@ def main():
                     "weak_id": w_id,
                     "strong_name": s_name,
                     "weak_name": w_name,
-                    "label": f"{slot}: {s_name} vs {w_name}",
+                    "label": _readable_game_label(slot, s_name, w_name),
                 })
 
     if not unplayed:
@@ -149,7 +188,7 @@ def main():
     st.subheader(f"📋 Current {gender} Results ({len(current_results)} games)")
 
     if not current_results:
-        st.caption("No results recorded yet.")
+        st.caption("No results recorded yet. Use the form above to add games as they're played.")
     else:
         # Sort by round order
         sorted_results = sorted(
@@ -191,11 +230,15 @@ def main():
     # Bulk import section
     # ══════════════════════════════════════════════════════════════════════
     st.markdown("---")
-    with st.expander("📥 Bulk Import (JSON)", expanded=False):
+    with st.expander("⚙️ Advanced: Bulk Import (JSON)", expanded=False):
         st.caption(
-            "Paste JSON to import multiple results at once. "
-            "Format: `{\"slot\": {\"winner_id\": int, \"winner_name\": str, "
-            "\"loser_id\": int, \"loser_name\": str, \"score\": \"W-L\"}}`"
+            "For power users — paste a JSON object to import multiple results at once. "
+            "Each key is a bracket slot code, and the value contains winner/loser info."
+        )
+        st.code(
+            '{"R1W1": {"winner_id": 1181, "winner_name": "Duke", '
+            '"loser_id": 1371, "loser_name": "Stetson", "score": "85-60"}}',
+            language="json",
         )
         json_input = st.text_area("JSON data", height=200, key="bulk_json")
         if st.button("Import", key="bulk_import"):
