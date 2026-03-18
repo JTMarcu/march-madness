@@ -12,10 +12,75 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.bracket import BracketPredictor, BracketSimulator, ROUND_NAMES, REGION_NAMES
+from src.bracket import BracketPredictor, BracketSimulator, SubmissionPredictor, ROUND_NAMES, REGION_NAMES
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
+
+# ── Model Registry ────────────────────────────────────────────────────────
+MODEL_REGISTRY = [
+    {
+        "id": "sub1_split_lr6",
+        "name": "\u2b50 Split LR \u2014 6 Features (Primary)",
+        "file": "sub1_split_lr6.csv",
+        "description": (
+            "**Our top model.** Separate logistic regressions for men\u2019s "
+            "and women\u2019s tournaments. Uses all 6 engineered features."
+        ),
+        "model": "Logistic Regression (C=1.0)",
+        "split": "Separate M/W",
+        "features": "seed, PointDiff, OffEff, WinPct, quality, Elo",
+    },
+    {
+        "id": "sub2_split_lr4",
+        "name": "Split LR \u2014 4 Features",
+        "file": "sub2_split_lr4.csv",
+        "description": (
+            "Leaner variant that drops Elo and GLM quality, relying on the "
+            "four strongest box-score-derived signals only."
+        ),
+        "model": "Logistic Regression (C=1.0)",
+        "split": "Separate M/W",
+        "features": "seed, PointDiff, OffEff, WinPct",
+    },
+    {
+        "id": "sub3_split_xgb6",
+        "name": "Split XGBoost \u2014 6 Features",
+        "file": "sub3_split_xgb6.csv",
+        "description": (
+            "Gradient-boosted trees with heavy regularization to test whether "
+            "non-linear feature interactions add predictive power."
+        ),
+        "model": "XGBClassifier (depth=2, n=200, \u03b3=5)",
+        "split": "Separate M/W",
+        "features": "seed, PointDiff, OffEff, WinPct, quality, Elo",
+    },
+    {
+        "id": "sub4_ensemble_lr_xgb",
+        "name": "Ensemble (LR + XGB average)",
+        "file": "sub4_ensemble_lr_xgb.csv",
+        "description": (
+            "Simple 50/50 average of the Split LR and Split XGBoost "
+            "predictions. Hedges model risk through diversity."
+        ),
+        "model": "Average of LR + XGB",
+        "split": "Separate M/W (inherited)",
+        "features": "seed, PointDiff, OffEff, WinPct, quality, Elo",
+    },
+    {
+        "id": "sub5_combined_lr6",
+        "name": "Combined LR \u2014 6 Features",
+        "file": "sub5_combined_lr6.csv",
+        "description": (
+            "One logistic regression trained on both men\u2019s and women\u2019s "
+            "data together. Tests whether splitting M/W actually helps."
+        ),
+        "model": "Logistic Regression (C=1.0)",
+        "split": "Combined M+W",
+        "features": "seed, PointDiff, OffEff, WinPct, quality, Elo",
+    },
+]
 
 st.set_page_config(
     page_title="Bracket Predictor",
@@ -587,45 +652,65 @@ def main():
         season = st.sidebar.selectbox("Pick a past season:",
                                        sorted(avail, reverse=True)[:10])
 
-    sim_mode = st.sidebar.radio(
-        "Mode",
-        ["Deterministic (favorites)", "Probabilistic (random)"],
+    # ── Model selector ────────────────────────────────────────────────
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("\U0001f9e0 Model")
+    model_names = [m["name"] for m in MODEL_REGISTRY]
+    selected_idx = st.sidebar.selectbox(
+        "Choose a model",
+        range(len(MODEL_REGISTRY)),
+        format_func=lambda i: MODEL_REGISTRY[i]["name"],
+        key="model_select",
     )
-    mode = "deterministic" if "Deterministic" in sim_mode else "probabilistic"
+    sel = MODEL_REGISTRY[selected_idx]
 
-    sim_key = f"sim_{gender_code}_{season}"
+    # Description card
+    st.sidebar.markdown(
+        f'<div style="background:#161b22;border:1px solid #30363d;'
+        f'border-radius:8px;padding:10px 12px;margin-bottom:8px;">'
+        f'<span style="color:#c9d1d9;font-size:13px;">{sel["description"]}</span>'
+        f'<table style="margin-top:6px;font-size:12px;color:#8b949e;'
+        f'border-collapse:collapse;width:100%;">'
+        f'<tr><td style="padding:2px 6px 2px 0;color:#58a6ff;">Model</td>'
+        f'<td style="padding:2px 0;">{sel["model"]}</td></tr>'
+        f'<tr><td style="padding:2px 6px 2px 0;color:#58a6ff;">Split</td>'
+        f'<td style="padding:2px 0;">{sel["split"]}</td></tr>'
+        f'<tr><td style="padding:2px 6px 2px 0;color:#58a6ff;">Features</td>'
+        f'<td style="padding:2px 0;">{sel["features"]}</td></tr>'
+        f'</table></div>',
+        unsafe_allow_html=True,
+    )
+
+    # Build the predictor for the selected model
+    sub_path = OUTPUT_DIR / sel["file"]
+    if sub_path.exists() and season == current_season:
+        active_predictor = SubmissionPredictor(predictor, sub_path, season)
+    else:
+        # Fall back to live model for historical seasons or missing CSV
+        active_predictor = predictor
+
+    sim_key = f"sim_{gender_code}_{season}_{sel['id']}"
     if sim_key not in st.session_state:
         st.session_state[sim_key] = BracketSimulator(
-            predictor, season, gender_code, DATA_DIR)
+            active_predictor, season, gender_code, DATA_DIR)
     sim = st.session_state[sim_key]
 
     # Action buttons
-    c1, c2, c3 = st.sidebar.columns(3)
+    c1, c2 = st.sidebar.columns(2)
     with c1:
-        if st.button("🤖 Auto-Fill", key="btn_auto"):
+        if st.button("\U0001f916 Auto-Fill", key="btn_auto"):
             sim.results.clear()
             sim.probabilities.clear()
-            sim.simulate_full_bracket(mode=mode)
-            # Re-apply actual results (they should always override)
+            sim.simulate_full_bracket(mode="deterministic")
             sim._load_actual_results()
             for k in list(st.session_state.keys()):
                 if k.startswith("pick_"):
                     del st.session_state[k]
             st.rerun()
     with c2:
-        if st.button("🔄 Reset", key="btn_reset"):
+        if st.button("\U0001f504 Reset", key="btn_reset"):
             st.session_state[sim_key] = BracketSimulator(
-                predictor, season, gender_code, DATA_DIR)
-            for k in list(st.session_state.keys()):
-                if k.startswith("pick_"):
-                    del st.session_state[k]
-            st.rerun()
-    with c3:
-        if st.button("🎲 Random", key="btn_rand"):
-            sim.results.clear()
-            sim.probabilities.clear()
-            sim.simulate_full_bracket(mode="probabilistic")
-            sim._load_actual_results()
+                active_predictor, season, gender_code, DATA_DIR)
             for k in list(st.session_state.keys()):
                 if k.startswith("pick_"):
                     del st.session_state[k]
@@ -633,7 +718,7 @@ def main():
 
     with st.sidebar.expander("📋 Seeds", expanded=False):
         sd = sim.seeds.copy()
-        sd["Team"] = sd["TeamID"].apply(predictor.team_name)
+        sd["Team"] = sd["TeamID"].apply(active_predictor.team_name)
         sd = sd[["Seed", "Team", "TeamID"]].sort_values("Seed")
         st.dataframe(sd, hide_index=True, width='stretch')
 
@@ -659,10 +744,10 @@ def main():
         "Pick winners for each game below. The percentage next to each team is our model's "
         "predicted win probability. Gold-highlighted games are locked actual results."
     )
-    something_changed = render_pick_interface(sim, predictor)
+    something_changed = render_pick_interface(sim, active_predictor)
 
     with bracket_placeholder.container():
-        svg_html = render_bracket_svg(sim, predictor)
+        svg_html = render_bracket_svg(sim, active_predictor)
         st.markdown(
             f'<div style="overflow-x:auto;overflow-y:auto;max-height:700px;'
             f'padding:4px 0;">{svg_html}</div>',
@@ -690,7 +775,7 @@ def main():
     # Matchup Explorer
     st.markdown("---")
     st.subheader("🔍 Head-to-Head Matchup Explorer")
-    teams_list = sorted(sim.seeds["TeamID"].apply(predictor.team_name).tolist())
+    teams_list = sorted(sim.seeds["TeamID"].apply(active_predictor.team_name).tolist())
     mc1, mc2 = st.columns(2)
     with mc1:
         t1_name = st.selectbox("Team 1", teams_list, key="explore_t1")
@@ -699,10 +784,10 @@ def main():
                                 [t for t in teams_list if t != t1_name],
                                 key="explore_t2")
     if t1_name and t2_name:
-        t1_ids = sim.seeds[sim.seeds["TeamID"].apply(predictor.team_name) == t1_name]["TeamID"].values
-        t2_ids = sim.seeds[sim.seeds["TeamID"].apply(predictor.team_name) == t2_name]["TeamID"].values
+        t1_ids = sim.seeds[sim.seeds["TeamID"].apply(active_predictor.team_name) == t1_name]["TeamID"].values
+        t2_ids = sim.seeds[sim.seeds["TeamID"].apply(active_predictor.team_name) == t2_name]["TeamID"].values
         if len(t1_ids) > 0 and len(t2_ids) > 0:
-            prob = predictor.predict_matchup(int(t1_ids[0]), int(t2_ids[0]), season, gender_code)
+            prob = active_predictor.predict_matchup(int(t1_ids[0]), int(t2_ids[0]), season, gender_code)
             mc1, mc2, mc3 = st.columns([2, 1, 2])
             with mc1:
                 st.metric(t1_name, f"{prob:.1%}")

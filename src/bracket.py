@@ -181,6 +181,56 @@ class BracketPredictor:
         return (max(round(t1_score), 40), max(round(t2_score), 40))
 
 
+class SubmissionPredictor:
+    """Wraps BracketPredictor but uses pre-computed submission CSV for predictions.
+
+    Falls back to the base predictor's live model when the lookup misses.
+    """
+
+    def __init__(
+        self,
+        base: BracketPredictor,
+        submission_path: Path,
+        season: int = 2026,
+    ):
+        self._base = base
+        self._preds: dict[tuple[int, int], float] = {}
+        self._load(submission_path, season)
+        # Proxy attributes that downstream code relies on
+        self.config = base.config
+        self.team_features = base.team_features
+        self.teams = base.teams
+        self.features = base.features
+
+    def _load(self, path: Path, season: int) -> None:
+        df = pd.read_csv(path)
+        for _, row in df.iterrows():
+            parts = str(row["ID"]).split("_")
+            if len(parts) != 3:
+                continue
+            s, t1, t2 = int(parts[0]), int(parts[1]), int(parts[2])
+            if s == season:
+                self._preds[(t1, t2)] = float(row["Pred"])
+
+    def predict_matchup(
+        self, team1_id: int, team2_id: int, season: int, gender: str = "M"
+    ) -> float:
+        if team1_id > team2_id:
+            return 1.0 - self.predict_matchup(team2_id, team1_id, season, gender)
+        key = (team1_id, team2_id)
+        if key in self._preds:
+            return self._preds[key]
+        return self._base.predict_matchup(team1_id, team2_id, season, gender)
+
+    def predict_score(
+        self, team1_id: int, team2_id: int, season: int, prob_t1_wins: float
+    ) -> tuple[int, int]:
+        return self._base.predict_score(team1_id, team2_id, season, prob_t1_wins)
+
+    def team_name(self, team_id: int) -> str:
+        return self._base.team_name(team_id)
+
+
 class BracketSimulator:
     """Simulate an NCAA tournament bracket."""
 
