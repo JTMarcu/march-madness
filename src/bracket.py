@@ -47,11 +47,11 @@ REGION_NAMES = {
 MODEL_REGISTRY = [
     {
         "id": "sub1_split_lr6",
-        "name": "\u2b50 Split LR \u2014 6 Features (Primary)",
+        "name": "Split LR \u2014 6 Features (Original)",
         "file": "sub1_split_lr6.csv",
         "description": (
-            "**Our top model.** Separate logistic regressions for men\u2019s "
-            "and women\u2019s tournaments. Uses all 6 engineered features."
+            "Original baseline. Separate logistic regressions for men\u2019s "
+            "and women\u2019s tournaments. Uses 6 engineered features."
         ),
         "model": "Logistic Regression (C=1.0)",
         "split": "Separate M/W",
@@ -104,6 +104,30 @@ MODEL_REGISTRY = [
         "model": "Logistic Regression (C=1.0)",
         "split": "Combined M+W",
         "features": "seed, PointDiff, OffEff, WinPct, quality, Elo",
+    },
+    {
+        "id": "sub7_split_lr7",
+        "name": "Split LR \u2014 7 Features, Tuned",
+        "file": "sub7_split_lr7_clean.csv",
+        "description": (
+            "Tuned logistic regression with stronger regularization (C=0.25/0.15). "
+            "Adds FGPct and FTPct, drops quality. Holdout MSE = 0.1579."
+        ),
+        "model": "Logistic Regression (C\u2098=0.25, C\u1d42=0.15)",
+        "split": "Separate M/W",
+        "features": "seed, PointDiff, OffEff, WinPct, Elo, FGPct, FTPct",
+    },
+    {
+        "id": "sub8_3model_ensemble",
+        "name": "\u2b50 3-Model Ensemble (Best)",
+        "file": "sub8_3model_ensemble.csv",
+        "description": (
+            "**Our top model.** 60% LR + 20% XGBoost + 20% LightGBM, split M/W. "
+            "7 features with tuned regularization. Holdout MSE = 0.1571."
+        ),
+        "model": "Ensemble (LR 60% + XGB 20% + LGBM 20%)",
+        "split": "Separate M/W",
+        "features": "seed, PointDiff, OffEff, WinPct, Elo, FGPct, FTPct",
     },
 ]
 

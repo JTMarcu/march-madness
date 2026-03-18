@@ -29,8 +29,10 @@ MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # Best validated feature set (from experiment leaderboard)
-TOP4Q_ELO = ["Diff_seed", "Diff_PointDiff", "Diff_OffEff", "Diff_WinPct",
-             "Diff_quality", "Diff_Elo"]
+BEST_FEATURES = ["Diff_seed", "Diff_PointDiff", "Diff_OffEff", "Diff_WinPct",
+                 "Diff_Elo", "Diff_FGPct", "Diff_FTPct"]
+MEN_C = 0.25
+WOMEN_C = 0.15
 
 CURRENT_SEASON = 2026
 
@@ -143,10 +145,11 @@ def train_and_export(
     momentum = features.compute_last14_momentum(game_data)
     quality = features.compute_team_quality(game_data, seeds)
     elo = features.compute_elo_ratings(compact_results)
+    shooting = features.compute_shooting_pcts(season_stats)
 
     tf = features.build_team_features(
         season_stats, win_pct, efficiency, momentum, seeds,
-        quality=quality, elo=elo,
+        quality=quality, elo=elo, shooting=shooting,
     )
     print(f"  Team features: {len(tf):,} team-seasons, {len(tf.columns)} columns")
 
@@ -182,23 +185,23 @@ def train_and_export(
     print("\n[4/5] Training models...")
 
     # Men's model
-    X_m = train_men[TOP4Q_ELO].fillna(0).values
+    X_m = train_men[BEST_FEATURES].fillna(0).values
     y_m = train_men["T1_Win"].values
     men_scaler = StandardScaler()
     X_m_scaled = men_scaler.fit_transform(X_m)
-    men_model = LogisticRegression(C=1.0, max_iter=1000, random_state=42)
+    men_model = LogisticRegression(C=MEN_C, max_iter=1000, random_state=42)
     men_model.fit(X_m_scaled, y_m)
 
     # Women's model
-    X_w = train_women[TOP4Q_ELO].fillna(0).values
+    X_w = train_women[BEST_FEATURES].fillna(0).values
     y_w = train_women["T1_Win"].values
     women_scaler = StandardScaler()
     X_w_scaled = women_scaler.fit_transform(X_w)
-    women_model = LogisticRegression(C=1.0, max_iter=1000, random_state=42)
+    women_model = LogisticRegression(C=WOMEN_C, max_iter=1000, random_state=42)
     women_model.fit(X_w_scaled, y_w)
 
-    print(f"  Men's model coefficients: {dict(zip(TOP4Q_ELO, men_model.coef_[0].round(3)))}")
-    print(f"  Women's model coefficients: {dict(zip(TOP4Q_ELO, women_model.coef_[0].round(3)))}")
+    print(f"  Men's model coefficients: {dict(zip(BEST_FEATURES, men_model.coef_[0].round(3)))}")
+    print(f"  Women's model coefficients: {dict(zip(BEST_FEATURES, women_model.coef_[0].round(3)))}")
 
     # ------------------------------------------------------------------
     # 5. Save artifacts
@@ -223,9 +226,9 @@ def train_and_export(
 
     # Config
     config = {
-        "features": TOP4Q_ELO,
+        "features": BEST_FEATURES,
         "model_type": "logreg",
-        "model_params": {"C": 1.0, "max_iter": 1000},
+        "model_params": {"C_men": MEN_C, "C_women": WOMEN_C, "max_iter": 1000},
         "current_season": current_season,
         "training_seasons": sorted([s for s in train_men["Season"].unique().tolist()]),
         "n_men_games": len(train_men),

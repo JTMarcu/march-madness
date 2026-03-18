@@ -19,6 +19,7 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from src import data_loader, features
@@ -33,6 +34,8 @@ CLIP = (0.025, 0.975)
 FEATURES_6 = ["Diff_seed", "Diff_PointDiff", "Diff_OffEff",
                "Diff_WinPct", "Diff_quality", "Diff_Elo"]
 FEATURES_4 = ["Diff_seed", "Diff_PointDiff", "Diff_OffEff", "Diff_WinPct"]
+FEATURES_7 = ["Diff_seed", "Diff_PointDiff", "Diff_OffEff",
+               "Diff_WinPct", "Diff_Elo", "Diff_FGPct", "Diff_FTPct"]
 
 
 # ------------------------------------------------------------------
@@ -59,10 +62,11 @@ def load_and_build_features():
     momentum = features.compute_last14_momentum(game_data)
     quality = features.compute_team_quality(game_data, seeds)
     elo = features.compute_elo_ratings(compact_results)
+    shooting = features.compute_shooting_pcts(season_stats)
 
     tf = features.build_team_features(
         season_stats, win_pct, efficiency, momentum, seeds,
-        quality=quality, elo=elo,
+        quality=quality, elo=elo, shooting=shooting,
     )
 
     # Build tournament training set
@@ -178,6 +182,53 @@ def train_predict_combined_logreg(train_df, pred_df, feat_cols, C=1.0):
     return p
 
 
+def train_predict_split_3model(train_df, pred_df, feat_cols,
+                                C_m=0.25, C_w=0.15,
+                                w_lr=0.6, w_xgb=0.2, w_lgb=0.2):
+    """Train split M/W 3-model ensemble (LR + XGB + LGBM)."""
+    train_m, train_w = split_mw(train_df)
+    pred_m, pred_w = split_mw(pred_df)
+
+    preds = pd.Series(index=pred_df.index, dtype=float)
+
+    xgb_params = dict(max_depth=3, n_estimators=150, learning_rate=0.05,
+                      min_child_weight=30, gamma=5, subsample=0.8,
+                      colsample_bytree=0.8, reg_alpha=1, reg_lambda=3)
+    lgb_params = dict(num_leaves=8, max_depth=2, n_estimators=200,
+                      learning_rate=0.05, min_child_samples=30,
+                      reg_alpha=1, reg_lambda=3, subsample=0.8,
+                      colsample_bytree=0.8, verbose=-1)
+
+    for label, tr, pr, C in [("Men", train_m, pred_m, C_m),
+                              ("Women", train_w, pred_w, C_w)]:
+        X_tr = tr[feat_cols].fillna(0).values
+        y_tr = tr["T1_Win"].values
+        X_pr = pr[feat_cols].fillna(0).values
+
+        scaler = StandardScaler()
+        X_tr_s = scaler.fit_transform(X_tr)
+        X_pr_s = scaler.transform(X_pr)
+
+        lr = LogisticRegression(C=C, max_iter=1000, random_state=42)
+        lr.fit(X_tr_s, y_tr)
+        p_lr = lr.predict_proba(X_pr_s)[:, 1]
+
+        xgb = XGBClassifier(**xgb_params, random_state=42,
+                            eval_metric="logloss", verbosity=0)
+        xgb.fit(X_tr_s, y_tr)
+        p_xgb = xgb.predict_proba(X_pr_s)[:, 1]
+
+        lgb = LGBMClassifier(**lgb_params, random_state=42)
+        lgb.fit(X_tr_s, y_tr)
+        p_lgb = lgb.predict_proba(X_pr_s)[:, 1]
+
+        p = w_lr * p_lr + w_xgb * p_xgb + w_lgb * p_lgb
+        preds.loc[pr.index] = p
+        print(f"  {label}: C={C}, LR coeffs={dict(zip(feat_cols, lr.coef_[0].round(3)))}")
+
+    return preds.values
+
+
 def save_submission(preds, sample_sub, path, desc):
     """Save a clipped submission CSV."""
     sub = sample_sub[["ID"]].copy()
@@ -243,9 +294,44 @@ def main():
                          "Combined LogReg, 6 features")
     results["sub5"] = p5
 
+    # --- Submission 7: Split LogReg, 7 features, tuned regularization ---
+    print("\n" + "=" * 60)
+    print("SUB 7: Split M/W LogReg — 7 features, C_m=0.25, C_w=0.15")
+    print("=" * 60)
+    p7 = train_predict_split_logreg(tourney, pred_df, FEATURES_7, C=0.25)
+    # Re-do with separate C for women
+    train_m, train_w = split_mw(tourney)
+    pred_m, pred_w = split_mw(pred_df)
+    preds7 = pd.Series(index=pred_df.index, dtype=float)
+    for label, tr, pr, C in [("Men", train_m, pred_m, 0.25),
+                              ("Women", train_w, pred_w, 0.15)]:
+        X_tr = tr[FEATURES_7].fillna(0).values
+        y_tr = tr["T1_Win"].values
+        X_pr = pr[FEATURES_7].fillna(0).values
+        scaler = StandardScaler()
+        X_tr_s = scaler.fit_transform(X_tr)
+        X_pr_s = scaler.transform(X_pr)
+        model = LogisticRegression(C=C, max_iter=1000, random_state=42)
+        model.fit(X_tr_s, y_tr)
+        preds7.loc[pr.index] = model.predict_proba(X_pr_s)[:, 1]
+        print(f"  {label}: C={C}, coeffs={dict(zip(FEATURES_7, model.coef_[0].round(3)))}")
+    p7 = preds7.values
+    s7 = save_submission(p7, sample_sub, OUTPUT_DIR / "sub7_split_lr7_clean.csv",
+                         "Split M/W LogReg, 7 features, tuned C")
+    results["sub7"] = p7
+
+    # --- Submission 8: 3-model ensemble (60% LR + 20% XGB + 20% LGBM) ---
+    print("\n" + "=" * 60)
+    print("SUB 8: 3-Model Ensemble — 60% LR + 20% XGB + 20% LGBM, 7 features")
+    print("=" * 60)
+    p8 = train_predict_split_3model(tourney, pred_df, FEATURES_7)
+    s8 = save_submission(p8, sample_sub, OUTPUT_DIR / "sub8_3model_ensemble.csv",
+                         "3-model ensemble, 7 features")
+    results["sub8"] = p8
+
     # --- Summary ---
     print("\n" + "=" * 60)
-    print("SUMMARY — All 5 submissions generated")
+    print("SUMMARY — All 7 submissions generated")
     print("=" * 60)
 
     # Pairwise correlation between submissions

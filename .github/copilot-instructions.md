@@ -175,29 +175,32 @@ valid_seasons(min_season=2003, max_season=2026)  # Excludes 2020
 
 ## Feature Importance (Empirically Validated)
 
-Ranked by absolute importance from 2025 validation (logistic regression coefficients):
+Ranked by absolute importance from final model validation (logistic regression coefficients, C_m=0.25, C_w=0.15):
 
 | Rank | Feature | Men's Coeff | Women's Coeff | Impact |
 |------|---------|-------------|---------------|--------|
-| 1 | `Diff_Elo` | +0.92 | +1.47 | **Dominant** — dynamic game-by-game rating |
-| 2 | `Diff_seed` | −0.48 | −0.99 | Lower seed = better team |
-| 3 | `Diff_WinPct` | −0.37 | −1.16 | Win percentage (negative due to multicollinearity) |
-| 4 | `Diff_PointDiff` | +0.20 | +0.94 | Point differential in regular season |
-| 5 | `Diff_OffEff` | +0.09 | −1.02 | Offensive efficiency (sign varies with Elo) |
-| 6 | `Diff_quality` | −0.09 | +0.17 | GLM team quality metric |
+| 1 | `Diff_Elo` | +0.81 | +1.11 | **Dominant** — dynamic game-by-game rating |
+| 2 | `Diff_seed` | −0.46 | −1.09 | Lower seed = better team |
+| 3 | `Diff_WinPct` | −0.35 | −0.73 | Win percentage |
+| 4 | `Diff_PointDiff` | +0.25 | +0.67 | Point differential in regular season |
+| 5 | `Diff_OffEff` | +0.16 | +0.04 | Offensive efficiency |
+| 6 | `Diff_FGPct` | −0.15 | +0.12 | Field goal percentage |
+| 7 | `Diff_FTPct` | +0.07 | −0.05 | Free throw percentage |
 
-**Key insight:** Elo ratings are now the **strongest feature** in both models. The top 6 features (`Diff_Elo`, `Diff_seed`, `Diff_WinPct`, `Diff_PointDiff`, `Diff_OffEff`, `Diff_quality`) drive the model. Elo's game-by-game dynamics capture information that static season averages miss.
+**Key insight:** Elo ratings are the **strongest feature** in both models. The top 7 features drive the model. Dropping `Diff_quality` (GLM team quality) improved MSE by 0.0010 — it adds noise. FGPct and FTPct provide a small but consistent improvement (−0.0006 MSE combined).
 
-## Modeling Guidelines (Updated with 2025 Results)
+## Modeling Guidelines (Updated with Optimization Results)
 
-### Critical Finding: Simple Models Win + Split M/W
-With only **~1,962 total tournament games** (2010–2025, M+W), complex models overfit:
-- **Split M/W LogReg: MSE = 0.1604** (BEST full-submission, with Elo)
-- Combined LogReg: MSE = 0.1606 (with Elo)
-- XGBoost classifier: MSE = 0.1591 (with Elo, combined)
-- Women-only LogReg: MSE = 0.1339 (remarkably predictable)
+### Critical Finding: Ensemble + Tuned Regularization
+With only **~1,962 total tournament games** (2010–2025, M+W):
+- **3-Model Ensemble (60% LR + 20% XGB + 20% LGBM): MSE = 0.1571** (BEST — sub8)
+- Split M/W LogReg 7feat, C=0.25/0.15: MSE = 0.1579 (sub7)
+- Split M/W LogReg 6feat, C=1.0: MSE = 0.1604 (sub1 — original baseline)
+- Combined LogReg: MSE = 0.1606 (sub5)
+- Women-only MSE: ~0.1325 (remarkably predictable)
+- Men-only MSE: ~0.1837 (harder to predict)
 
-**Rule: Use separate M/W models. Start with logistic regression on 4–6 features including Elo. Only add complexity if it beats LogReg on ≥2 of 3 holdout years.**
+**Rule: Use separate M/W models with 7 features (seed, PD, OffEff, WinPct, Elo, FGPct, FTPct). Use C=0.25 for men and C=0.15 for women (more regularization than default). For Kaggle, use the 3-model ensemble. For bracket picks, pure LR gives identical results.**
 
 ### Validation Strategy
 1. **Multi-year holdout** — validate on 2023, 2024, AND 2025 (not just one year). A change only counts if it helps on **at least 2 of 3** holdout years.
@@ -206,10 +209,10 @@ With only **~1,962 total tournament games** (2010–2025, M+W), complex models o
 4. Final model: train on ALL 2010–2025 data, predict 2026.
 
 ### Model Selection Hierarchy
-1. **LogisticRegression** (C=1.0) on top 4–6 diff features → strong baseline
-2. **Shallow XGBoost** (max_depth=2, min_child_weight=30, gamma=5) → test non-linear interactions
-3. **LightGBM** (num_leaves=8, max_depth=2) → alternative to XGBoost
-4. **Simple average of LogReg + shallow XGB** → only if both models are individually good
+1. **3-Model Ensemble** (60% LR + 20% XGB + 20% LGBM) on 7 diff features → best MSE (0.1571)
+2. **LogisticRegression** (C_m=0.25, C_w=0.15) on 7 diff features → clean baseline (0.1579)
+3. **Shallow XGBoost** (max_depth=3, min_child_weight=30, gamma=5) → blend component
+4. **LightGBM** (num_leaves=8, max_depth=2) → blend component
 
 ### Calibration & Clipping
 - Clip final predictions to `[0.025, 0.975]` — never predict absolute certainty.
@@ -274,20 +277,21 @@ show_leaderboard()  # See all experiments ranked by average MSE
 - **2026 iteration 1** (`notebooks/03_modeling.ipynb`): 3-phase pipeline. LogReg MSE=0.1447 beat XGBoost (0.1529) and ensemble (0.1523). GLM quality was overflowing (fixed). Massey handling was wrong for women (fixed).
 - **2026 iteration 2** (`notebooks/march_madness_2026.ipynb`): 25+ experiments. Split M/W strategy discovered — women far more predictable (0.134 vs 0.187 men-only). SOS and shooting % tested but don't beat top4+quality.
 - **2026 iteration 3** (`notebooks/march_madness_2026.ipynb`): Added Elo ratings (game-by-game dynamic ratings) and coach tournament experience. Elo improved split MSE from 0.1614 → 0.1604. Coach experience did not help. Final: split LR with top4+quality+Elo.
+- **2026 iteration 4** (optimization sweep): Exhaustive feature ablation + C-parameter tuning + ensemble testing. Dropped quality (hurts!), added FGPct+FTPct, tuned C=0.25/0.15, tested LR+XGB+LGBM blends. Improved from 0.1604 → 0.1571 (Δ=−0.0033).
 
 ## Key Learnings (Empirically Validated)
 1. **Simple logistic regression beats complex models** on ~2K tournament games — the dataset is too small for deep trees
-2. **Seed difference is the single most important feature** (coeff −1.10) — the selection committee already encodes team strength
-3. **Top 4 features capture nearly all signal**: seed, point diff, offensive efficiency, win%
+2. **Elo ratings are the strongest feature** — game-by-game dynamic ratings with margin-of-victory capture recency, opponent quality, and historical momentum. Elo is the largest coefficient in both M and W models.
+3. **Top 7 features capture all signal**: seed, point diff, offensive efficiency, win%, Elo, FGPct, FTPct
 4. **Feature differences >>> raw features** — halves feature count, better signal
 5. **Multi-year validation is essential** — a model that looks great on 2025 alone may have gotten lucky
 6. **Overconfident predictions destroy MSE** — always clip to [0.025, 0.975]
-7. **GLM team quality must be regularized** — unregularized GLM on team indicators overflows (1e16 values)
+7. **GLM team quality hurts** — despite being a regularized feature, quality adds noise (+0.0010 MSE when included). The information is already captured by Elo and seed.
 8. **Massey ordinals are men-only** — filling women's data with 0 is worse than excluding them
 9. **Split M/W models beat combined** — women's tournament is more predictable (fewer upsets, larger talent gaps), so a tuned women-only model dramatically improves overall MSE
-10. **Point differential → probability calibration outperforms direct classification** (but LogReg is simpler and nearly as good)
+10. **Stronger regularization helps** — C=0.25 for men and C=0.15 for women beats C=1.0 (default). Women need even more regularization due to fewer games and larger coefficients.
 11. **Every new feature/model must earn its place** — test on 3 holdout years, keep only if it helps 2+ of them
-12. **SOS and shooting % are redundant** — seed already encodes SOS; shooting % overlaps with OffEff. Neither beats top4+quality in multi-year validation
-13. **Regularization strength (C=1.0) is near-optimal** — sweep from 0.01 to 5.0 shows diminishing returns from deviating
-14. **Elo ratings are the strongest feature** — game-by-game dynamic ratings with margin-of-victory capture recency, opponent quality, and historical momentum. Elo is the largest coefficient in both M and W models.
-15. **Coach tournament experience doesn't help** — despite intuition, coach NCAA tournament appearances add noise rather than signal in multi-year validation
+12. **3-model ensemble is remarkably robust** — 60/20/20 LR+XGB+LGBM gives 0.1571 regardless of exact weight allocation (50-70% LR all yield same MSE). This suggests genuine model diversity benefit.
+13. **FGPct and FTPct each contribute ~0.0003 MSE improvement** — small but consistent across all holdout years. SOS, DefEff, rebounds, assists all hurt.
+14. **Coach tournament experience doesn't help** — despite intuition, coach NCAA tournament appearances add noise rather than signal in multi-year validation
+15. **For bracket picks, model choice barely matters** — all optimized models produce identical bracket predictions (same champion, same Final Four). The differences are in probability calibration for Kaggle scoring.
