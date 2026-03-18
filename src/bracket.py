@@ -30,12 +30,13 @@ ROUND_NAMES = {
     "R6": "Championship",
 }
 
-# Region display names (men's standard — may vary by year)
+# Region display names — 2026 bracket mapping
+# W=Duke(1), X=Florida(1), Y=Michigan(1), Z=Arizona(1)
 REGION_NAMES = {
-    "W": "West",
-    "X": "East",
-    "Y": "South",
-    "Z": "Midwest",
+    "W": "East",
+    "X": "South",
+    "Y": "Midwest",
+    "Z": "West",
 }
 
 
@@ -127,6 +128,55 @@ class BracketPredictor:
             prob = self.women_model.predict_proba(X_scaled)[0, 1]
 
         return float(np.clip(prob, 0.025, 0.975))
+
+    def predict_score(
+        self,
+        team1_id: int,
+        team2_id: int,
+        season: int,
+        prob_t1_wins: float,
+    ) -> tuple[int, int]:
+        """Predict a plausible score line for a matchup.
+
+        Uses each team's avg Score and opponent's avg Opp_Score as a baseline,
+        then adjusts the spread to be consistent with the win probability.
+
+        Args:
+            team1_id: First team's ID.
+            team2_id: Second team's ID.
+            season: Season year.
+            prob_t1_wins: P(team1 wins) from predict_matchup.
+
+        Returns:
+            Tuple of (team1_score, team2_score) as rounded integers.
+        """
+        tf = self.team_features
+        t1 = tf[(tf["Season"] == season) & (tf["TeamID"] == team1_id)]
+        t2 = tf[(tf["Season"] == season) & (tf["TeamID"] == team2_id)]
+
+        if len(t1) == 0 or len(t2) == 0:
+            return (70, 70)
+
+        # Baseline: average of team's offense and opponent's defense
+        t1_score = (float(t1["Score"].values[0]) + float(t2["Opp_Score"].values[0])) / 2
+        t2_score = (float(t2["Score"].values[0]) + float(t1["Opp_Score"].values[0])) / 2
+
+        # Adjust spread to be consistent with win probability
+        # Map prob to a spread: prob=0.5 → 0pt spread, prob=0.75 → ~8pt spread
+        target_spread = 16.0 * (prob_t1_wins - 0.5)  # rough linear mapping
+        current_spread = t1_score - t2_score
+        adjustment = (target_spread - current_spread) / 2
+        t1_score += adjustment
+        t2_score -= adjustment
+
+        # Tournament games are typically lower-scoring; nudge toward ~70
+        avg = (t1_score + t2_score) / 2
+        tourney_avg = 70.0
+        scale = 0.7  # blend toward tournament average
+        t1_score = t1_score - (avg - tourney_avg) * (1 - scale)
+        t2_score = t2_score - (avg - tourney_avg) * (1 - scale)
+
+        return (max(round(t1_score), 40), max(round(t2_score), 40))
 
 
 class BracketSimulator:

@@ -115,7 +115,7 @@ def _esc(text: str) -> str:
 
 
 def _team_box(x: float, y: float, name: str, seed: Optional[int],
-              is_winner: bool = False) -> str:
+              is_winner: bool = False, score: Optional[int] = None) -> str:
     if name in ("TBD", None, ""):
         fill, stroke, tfill = "#f0f0f0", "#ddd", "#bbb"
         weight, display = "normal", "TBD"
@@ -128,13 +128,20 @@ def _team_box(x: float, y: float, name: str, seed: Optional[int],
         weight = "normal"
         display = f"{seed} {_trunc(name)}" if seed else _trunc(name)
     display = _esc(display)
-    return (
+    svg = (
         f'<rect x="{x}" y="{y}" width="{BOX_W}" height="{BOX_H}" '
         f'fill="{fill}" stroke="{stroke}" stroke-width="1"/>\n'
         f'<text x="{x + 3}" y="{y + BOX_H - 5}" font-size="9" '
         f'fill="{tfill}" font-weight="{weight}" '
         f'font-family="Arial,sans-serif">{display}</text>\n'
     )
+    if score is not None:
+        svg += (
+            f'<text x="{x + BOX_W - 3}" y="{y + BOX_H - 5}" font-size="8" '
+            f'fill="#666" font-weight="{weight}" text-anchor="end" '
+            f'font-family="Arial,sans-serif">{score}</text>\n'
+        )
+    return svg
 
 
 def _game_box(x: float, cy: float, gd: dict) -> str:
@@ -143,9 +150,11 @@ def _game_box(x: float, cy: float, gd: dict) -> str:
     bot_y = top_y + BOX_H + 2
     winner = gd.get("winner_id")
     svg = _team_box(x, top_y, gd["strong_name"], gd["strong_seed"],
-                    is_winner=(winner is not None and winner == gd["strong_id"]))
+                    is_winner=(winner is not None and winner == gd["strong_id"]),
+                    score=gd.get("strong_score"))
     svg += _team_box(x, bot_y, gd["weak_name"], gd["weak_seed"],
-                     is_winner=(winner is not None and winner == gd["weak_id"]))
+                     is_winner=(winner is not None and winner == gd["weak_id"]),
+                     score=gd.get("weak_score"))
     return svg
 
 
@@ -182,6 +191,12 @@ def _collect_games(sim: BracketSimulator,
         prob = sim.probabilities.get(slot)
         if prob is None and s_id is not None and w_id is not None:
             prob = predictor.predict_matchup(s_id, w_id, sim.season, sim.gender)
+        # Predict scores
+        strong_score, weak_score = None, None
+        if prob is not None and s_id is not None and w_id is not None:
+            strong_score, weak_score = predictor.predict_score(
+                s_id, w_id, sim.season, prob)
+
         games[slot] = {
             "slot": slot,
             "strong_id": s_id,
@@ -192,6 +207,8 @@ def _collect_games(sim: BracketSimulator,
             "weak_seed": _seed_num(sim, w_id),
             "winner_id": sim.results.get(slot),
             "probability": prob,
+            "strong_score": strong_score,
+            "weak_score": weak_score,
         }
     return games
 
@@ -209,7 +226,14 @@ def render_bracket_svg(sim: BracketSimulator,
     regions = sorted(r1_slots["Slot"].str[2].unique())
     if len(regions) < 4:
         return "<p style='color:red;'>Need 4 regions for bracket.</p>"
-    left_top, left_bot, right_top, right_bot = regions
+
+    # Standard NCAA bracket layout matching the official bracket:
+    # Left side:  top = East (W), bottom = South (X)
+    # Right side: top = West (Z), bottom = Midwest (Y)
+    # Fallback: alphabetical if regions differ
+    region_layout = {"W": 0, "X": 1, "Z": 2, "Y": 3}
+    ordered = sorted(regions, key=lambda r: region_layout.get(r, ord(r)))
+    left_top, left_bot, right_top, right_bot = ordered
 
     parts: list[str] = []
 
@@ -394,8 +418,12 @@ def _render_game_pick(sim: BracketSimulator,
     s1 = f"({gd['strong_seed']}) " if gd.get("strong_seed") else ""
     s2 = f"({gd['weak_seed']}) " if gd.get("weak_seed") else ""
     prob = gd.get("probability") or 0.5
-    opt1 = f"{s1}{gd['strong_name']} \u2014 {prob:.0%}"
-    opt2 = f"{s2}{gd['weak_name']} \u2014 {1 - prob:.0%}"
+    ss = gd.get("strong_score")
+    ws = gd.get("weak_score")
+    score_str1 = f" [{ss}]" if ss is not None else ""
+    score_str2 = f" [{ws}]" if ws is not None else ""
+    opt1 = f"{s1}{gd['strong_name']}{score_str1} \u2014 {prob:.0%}"
+    opt2 = f"{s2}{gd['weak_name']}{score_str2} \u2014 {1 - prob:.0%}"
 
     current = sim.results.get(slot)
     idx = 1 if current == t2 else 0
@@ -425,9 +453,11 @@ def render_pick_interface(sim: BracketSimulator,
     games = _collect_games(sim, predictor)
     changed = False
 
-    # Detect regions
+    # Detect regions — order to match bracket layout
     r1_slots = sim.slots[sim.slots["Slot"].str.match(r"^R1[A-Z]")]
-    regions = sorted(r1_slots["Slot"].str[2].unique())
+    region_layout = {"W": 0, "X": 1, "Z": 2, "Y": 3}
+    regions = sorted(r1_slots["Slot"].str[2].unique(),
+                     key=lambda r: region_layout.get(r, ord(r)))
 
     # Play-in slots
     playin_slots = sorted([s for s in games if not s.startswith("R")])
@@ -590,7 +620,7 @@ def main():
         sd = sim.seeds.copy()
         sd["Team"] = sd["TeamID"].apply(predictor.team_name)
         sd = sd[["Seed", "Team", "TeamID"]].sort_values("Seed")
-        st.dataframe(sd, hide_index=True, width="stretch")
+        st.dataframe(sd, hide_index=True, use_container_width=True)
 
     # Sidebar: model info
     with st.sidebar.expander("\U0001F4CA Model Info", expanded=False):
@@ -628,7 +658,7 @@ def main():
             df.columns = ["Round", "Team 1", "Team 2", "Winner", "P(Team 1)"]
             df["P(Team 1)"] = df["P(Team 1)"].apply(
                 lambda x: f"{x:.1%}" if x is not None else "\u2014")
-            st.dataframe(df, hide_index=True, width="stretch")
+            st.dataframe(df, hide_index=True, use_container_width=True)
 
     # ── Matchup Explorer ──────────────────────────────────────────────────
     st.markdown("---")
