@@ -191,11 +191,14 @@ def _collect_games(sim: BracketSimulator,
         prob = sim.probabilities.get(slot)
         if prob is None and s_id is not None and w_id is not None:
             prob = predictor.predict_matchup(s_id, w_id, sim.season, sim.gender)
-        # Predict scores
+        # Predict scores (gracefully handle missing method or data)
         strong_score, weak_score = None, None
         if prob is not None and s_id is not None and w_id is not None:
-            strong_score, weak_score = predictor.predict_score(
-                s_id, w_id, sim.season, prob)
+            try:
+                strong_score, weak_score = predictor.predict_score(
+                    s_id, w_id, sim.season, prob)
+            except (AttributeError, Exception):
+                pass
 
         games[slot] = {
             "slot": slot,
@@ -422,23 +425,26 @@ def _render_game_pick(sim: BracketSimulator,
     ws = gd.get("weak_score")
     score_str1 = f" [{ss}]" if ss is not None else ""
     score_str2 = f" [{ws}]" if ws is not None else ""
-    opt1 = f"{s1}{gd['strong_name']}{score_str1} \u2014 {prob:.0%}"
-    opt2 = f"{s2}{gd['weak_name']}{score_str2} \u2014 {1 - prob:.0%}"
+    label1 = f"{s1}{gd['strong_name']}{score_str1} \u2014 {prob:.0%}"
+    label2 = f"{s2}{gd['weak_name']}{score_str2} \u2014 {1 - prob:.0%}"
 
     current = sim.results.get(slot)
     idx = 1 if current == t2 else 0
 
+    # Use team IDs as values (stable across reruns) with formatted labels
+    labels = {t1: label1, t2: label2}
     pick_key = f"pick_{slot}"
     chosen = st.radio(
         slot,
-        [opt1, opt2],
+        [t1, t2],
         index=idx,
+        format_func=lambda tid: labels.get(tid, str(tid)),
         key=pick_key,
         horizontal=True,
         label_visibility="collapsed",
     )
 
-    new_winner = t1 if chosen == opt1 else t2
+    new_winner = chosen
     changed = (sim.results.get(slot) != new_winner)
     if changed:
         sim.results[slot] = new_winner
@@ -467,6 +473,7 @@ def render_pick_interface(sim: BracketSimulator,
     tabs = st.tabs(tab_names)
 
     # ── Play-In ───────────────────────────────────────────────────────────
+    playin_changed = False
     with tabs[0]:
         if not playin_slots:
             st.info("No play-in games for this tournament.")
@@ -476,6 +483,11 @@ def render_pick_interface(sim: BracketSimulator,
                 with cols[i % 2]:
                     if _render_game_pick(sim, predictor, games[slot], slot):
                         changed = True
+                        playin_changed = True
+
+    # Re-collect games after play-in picks so R64+ sees updated teams
+    if playin_changed:
+        games = _collect_games(sim, predictor)
 
     # ── Rounds 1-4 (region-based) ─────────────────────────────────────────
     round_cfgs = [
@@ -533,7 +545,6 @@ def render_pick_interface(sim: BracketSimulator,
 # ═══════════════════════════════════════════════════════════════════════════
 def main():
     st.title("\U0001F3C0 March Madness Bracket Predictor")
-    st.caption("Split M/W logistic regression \u00b7 trained on 2010\u20132025 tournament data")
 
     if not check_models_exist():
         st.error(
@@ -624,24 +635,62 @@ def main():
 
     # Sidebar: model info
     with st.sidebar.expander("\U0001F4CA Model Info", expanded=False):
+        st.write(f"**Type:** Split M/W {predictor.config.get('model_type', 'logreg').upper()}")
         st.write(f"**Features:** {', '.join(predictor.features)}")
         st.write(f"**Training:** {predictor.config['n_men_games']}M + "
                  f"{predictor.config['n_women_games']}W games")
+        st.write(f"**Regularization:** C={predictor.config.get('model_params', {}).get('C', '?')}")
+        st.write(f"**Metric:** MSE (Brier score) — lower is better")
 
-    # ── Bracket SVG ───────────────────────────────────────────────────────
-    st.markdown(f"### {season} NCAA {gender} Tournament Bracket")
+    # Sidebar: tournament progress (actual results)
+    with st.sidebar.expander("\U0001F3C6 Tournament Progress", expanded=False):
+        pfx_file = "M" if gender_code == "M" else "W"
+        try:
+            actual = pd.read_csv(DATA_DIR / f"{pfx_file}NCAATourneyCompactResults.csv")
+            actual = actual[actual["Season"] == season]
+            if len(actual) == 0:
+                st.caption("No results yet — tournament hasn't started or data not updated.")
+            else:
+                st.success(f"**{len(actual)} games played**")
+                teams_df = pd.read_pickle(MODELS_DIR / "teams.pkl") if (MODELS_DIR / "teams.pkl").exists() else None
+                for _, g in actual.sort_values("DayNum").iterrows():
+                    wname = predictor.team_name(int(g["WTeamID"]))
+                    lname = predictor.team_name(int(g["LTeamID"]))
+                    st.write(f"{wname} **{int(g['WScore'])}** — {lname} {int(g['LScore'])}")
+        except Exception:
+            st.caption("Could not load tournament results.")
 
-    svg_html = render_bracket_svg(sim, predictor)
-    st.markdown(
-        f'<div style="overflow-x:auto;overflow-y:auto;max-height:700px;'
-        f'padding:4px 0;">{svg_html}</div>',
-        unsafe_allow_html=True,
+    # ── Model info banner ─────────────────────────────────────────────────
+    feat_str = ", ".join(f.replace("Diff_", "") for f in predictor.features)
+    model_type = predictor.config.get("model_type", "logreg").upper()
+    n_m = predictor.config.get("n_men_games", "?")
+    n_w = predictor.config.get("n_women_games", "?")
+    st.info(
+        f"**Model:** Split M/W {model_type} "
+        f"({n_m} men\'s + {n_w} women\'s games, 2010\u20132025)  \n"
+        f"**Features:** {feat_str}  \n"
+        f"**Predictions clipped to [0.025, 0.975]**",
+        icon="\U0001F916",
     )
 
-    # ── Pick interface ────────────────────────────────────────────────────
+    # ── Bracket SVG — rendered in a placeholder so picks update it ────────
+    st.markdown(f"### {season} NCAA {gender} Tournament Bracket")
+    bracket_placeholder = st.empty()
+
+    # ── Pick interface (processed BEFORE SVG fills placeholder) ────────────
     st.markdown("---")
     st.subheader("\U0001F4DD Fill Your Bracket")
     something_changed = render_pick_interface(sim, predictor)
+
+    # Now render SVG with up-to-date sim.results
+    with bracket_placeholder.container():
+        svg_html = render_bracket_svg(sim, predictor)
+        st.markdown(
+            f'<div style="overflow-x:auto;overflow-y:auto;max-height:700px;'
+            f'padding:4px 0;">{svg_html}</div>',
+            unsafe_allow_html=True,
+        )
+
     if something_changed:
         st.rerun()
 
