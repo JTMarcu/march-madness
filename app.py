@@ -24,10 +24,77 @@ OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 
 st.set_page_config(
     page_title="March Madness 2026",
-    page_icon="🏀",
+    page_icon="\U0001f3c0",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ── Custom theme CSS ──────────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* ── Global ────────────────────────────────────────────── */
+[data-testid="stAppViewContainer"] { background: linear-gradient(180deg, #0d1117 0%, #161b22 100%); color: #e6edf3; }
+[data-testid="stSidebar"] { background: #0d1117; border-right: 1px solid #30363d; }
+[data-testid="stHeader"] { background: transparent; }
+h1, h2, h3, h4 { color: #f0f6fc !important; }
+p, span, label, .stCaption, [data-testid="stCaptionContainer"] { color: #8b949e !important; }
+
+/* ── Metric cards ──────────────────────────────────────── */
+[data-testid="stMetric"] {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    padding: 16px 20px; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+[data-testid="stMetricValue"] { color: #58a6ff !important; font-size: 1.8rem !important; }
+[data-testid="stMetricLabel"] { color: #8b949e !important; font-weight: 600 !important; text-transform: uppercase; font-size: .75rem !important; letter-spacing: .05em; }
+[data-testid="stMetricDelta"] { color: #8b949e !important; }
+
+/* ── Tables ────────────────────────────────────────────── */
+[data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
+
+/* ── Hero banner ───────────────────────────────────────── */
+.hero-banner {
+    background: linear-gradient(135deg, #1a3a5c 0%, #0f2744 50%, #1a1a2e 100%);
+    border: 1px solid #30363d; border-radius: 16px;
+    padding: 28px 32px; margin-bottom: 20px;
+    position: relative; overflow: hidden;
+}
+.hero-banner::before {
+    content: ""; position: absolute; top: -40px; right: -40px;
+    width: 200px; height: 200px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,140,0,.12) 0%, transparent 70%);
+}
+.hero-banner h1 { margin: 0 0 4px 0; font-size: 2.2rem; color: #f0f6fc !important; }
+.hero-banner p  { margin: 0; color: #8b949e !important; font-size: 1rem; }
+
+/* ── Stat card ─────────────────────────────────────────── */
+.stat-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    padding: 20px 24px; height: 100%;
+}
+.stat-card h3 { margin: 0 0 4px 0; font-size: 1.1rem; color: #f0f6fc !important; }
+.stat-card .subtitle { color: #8b949e; font-size: .82rem; margin-bottom: 12px; }
+.stat-card .item { padding: 8px 0; border-bottom: 1px solid #21262d; font-size: .9rem; color: #c9d1d9; }
+.stat-card .item:last-child { border-bottom: none; }
+.stat-card .item strong { color: #f0f6fc; }
+.stat-card .empty { color: #484f58; font-style: italic; padding: 12px 0; }
+
+/* ── Nav cards ─────────────────────────────────────────── */
+.nav-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    padding: 20px 24px; text-align: center; transition: border-color .2s;
+}
+.nav-card:hover { border-color: #58a6ff; }
+.nav-card .icon { font-size: 2rem; margin-bottom: 4px; }
+.nav-card .label { color: #f0f6fc; font-weight: 600; font-size: 1rem; }
+.nav-card .desc { color: #8b949e; font-size: .82rem; margin-top: 2px; }
+
+/* ── Scrollbar ─────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0d1117; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+</style>
+""", unsafe_allow_html=True)
 
 
 @st.cache_resource
@@ -43,12 +110,19 @@ def _check_models() -> bool:
     return all((MODELS_DIR / f).exists() for f in required)
 
 
+def _esc(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def main():
-    st.title("🏀 March Madness 2026")
+    # ── Hero Banner ───────────────────────────────────────────────────────
     st.markdown(
-        "Track how our ML model performs against the real NCAA tournament. "
-        "We predicted win probabilities for every possible matchup — "
-        "now let's see how those predictions hold up."
+        '<div class="hero-banner">'
+        '<h1>\U0001f3c0 March Madness 2026</h1>'
+        '<p>Live model performance tracker \u2014 see how our ML predictions '
+        'hold up against the real tournament</p>'
+        '</div>',
+        unsafe_allow_html=True,
     )
 
     if not _check_models():
@@ -62,10 +136,12 @@ def main():
     gender = st.sidebar.radio("Tournament", ["Men's", "Women's"], key="dash_gender")
     gender_code = "M" if gender == "Men's" else "W"
 
-    # Pick submission file
     sub_files = sorted(OUTPUT_DIR.glob("submission*.csv"))
     sub_names = [f.name for f in sub_files]
-    default_idx = sub_names.index("submission_refined.csv") if "submission_refined.csv" in sub_names else 0
+    default_idx = (
+        sub_names.index("submission_refined.csv")
+        if "submission_refined.csv" in sub_names else 0
+    )
     selected_sub = st.sidebar.selectbox(
         "Submission to evaluate",
         sub_names,
@@ -74,10 +150,9 @@ def main():
     )
     sub_path = OUTPUT_DIR / selected_sub
 
-    # ── Model info card ───────────────────────────────────────────────────
     cfg = predictor.config
     feat_str = ", ".join(f.replace("Diff_", "") for f in predictor.features)
-    with st.sidebar.expander("🤖 Model Info", expanded=False):
+    with st.sidebar.expander("\U0001f916 Model Info", expanded=False):
         st.write(f"**Type:** Split M/W {cfg.get('model_type', 'logreg').upper()}")
         st.write(f"**Features:** {feat_str}")
         st.write(f"**Training:** {cfg['n_men_games']}M + {cfg['n_women_games']}W games")
@@ -93,20 +168,22 @@ def main():
     metrics = compute_metrics(perf_df)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Top-level metrics
+    # KPI metrics
     # ══════════════════════════════════════════════════════════════════════
-    st.markdown("---")
-    st.subheader(f"📊 {gender} Tournament — Model Performance")
-    st.caption(f"Last updated: {last_updated} · Evaluating: {selected_sub}")
+    st.markdown(f"### \U0001f4ca {gender} Tournament")
+    st.caption(f"Last updated: {last_updated} \u00b7 Evaluating: {selected_sub}")
 
     if actual_count == 0:
-        st.info(
-            "No actual results recorded yet. Head to **📝 Enter Results** "
-            "in the sidebar to add game outcomes as they're played.",
-            icon="📭",
+        st.markdown(
+            '<div class="stat-card" style="text-align:center;padding:40px 24px;">'
+            '<div style="font-size:3rem;margin-bottom:8px;">\U0001f4ed</div>'
+            '<h3>No Results Yet</h3>'
+            '<p style="color:#8b949e;margin:0;">Head to <b>\U0001f4dd Enter Results</b> '
+            'in the sidebar to add game outcomes as they\'re played.</p>'
+            '</div>',
+            unsafe_allow_html=True,
         )
     else:
-        # KPI row
         m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.metric("Games Played", metrics.get("n_games", 0))
@@ -116,18 +193,19 @@ def main():
             n_preds = metrics.get("n_with_preds", 0)
             st.metric("Accuracy", f"{acc:.1%}", delta=f"{n_correct}/{n_preds}")
         with m3:
-            mse = metrics.get("mse", 0)
             st.metric(
                 "Running MSE",
-                f"{mse:.4f}",
-                help="Mean Squared Error — measures how far off our predicted probabilities are from reality. Lower is better. Under 0.20 is strong; over 0.25 needs work.",
+                f"{metrics.get('mse', 0):.4f}",
+                help="Mean Squared Error \u2014 how far off our predicted "
+                     "probabilities are from reality. Lower is better. "
+                     "Under 0.20 is strong; over 0.25 needs work.",
             )
         with m4:
-            ll = metrics.get("log_loss", 0)
             st.metric(
                 "Log Loss",
-                f"{ll:.4f}",
-                help="Log Loss — penalizes confident wrong predictions harshly. Lower is better.",
+                f"{metrics.get('log_loss', 0):.4f}",
+                help="Log Loss \u2014 penalizes confident wrong predictions "
+                     "harshly. Lower is better.",
             )
 
         # ── Per-round breakdown ───────────────────────────────────────────
@@ -137,96 +215,144 @@ def main():
             c1, c2 = st.columns([2, 3])
             with c1:
                 display_rd = round_df.copy()
-                display_rd["Accuracy"] = display_rd["Accuracy"].apply(lambda x: f"{x:.1%}")
-                display_rd["MSE"] = display_rd["MSE"].apply(lambda x: f"{x:.4f}")
-                st.dataframe(display_rd, hide_index=True, width='stretch')
+                display_rd["Accuracy"] = display_rd["Accuracy"].apply(
+                    lambda x: f"{x:.1%}")
+                display_rd["MSE"] = display_rd["MSE"].apply(
+                    lambda x: f"{x:.4f}")
+                st.dataframe(display_rd, hide_index=True, width="stretch")
             with c2:
-                # Simple accuracy bar chart
                 chart_data = round_df[["Round", "Accuracy"]].set_index("Round")
-                st.bar_chart(chart_data, color="#28a745")
+                st.bar_chart(chart_data, color="#58a6ff")
 
         # ── Game-by-game results ──────────────────────────────────────────
         st.markdown("#### Game-by-Game Results")
-
-        # Style the table
         if not perf_df.empty:
             display = perf_df.copy()
             display["P(Winner)"] = display["P(Winner)"].apply(
-                lambda x: f"{x:.1%}" if pd.notna(x) else "—"
+                lambda x: f"{x:.1%}" if pd.notna(x) else "\u2014"
             )
             display["MSE"] = display["MSE"].apply(
-                lambda x: f"{x:.4f}" if pd.notna(x) else "—"
+                lambda x: f"{x:.4f}" if pd.notna(x) else "\u2014"
             )
             display["Result"] = display["Correct"].apply(
-                lambda x: "✅" if x is True else ("❌" if x is False else "—")
+                lambda x: "\u2705" if x is True else (
+                    "\u274c" if x is False else "\u2014")
             )
-            show_cols = ["Round", "Winner", "Loser", "Score", "P(Winner)", "Result", "MSE"]
+            show_cols = [
+                "Round", "Winner", "Loser", "Score",
+                "P(Winner)", "Result", "MSE",
+            ]
             st.dataframe(
                 display[show_cols],
                 hide_index=True,
-                width='stretch',
+                width="stretch",
                 column_config={
-                    "P(Winner)": st.column_config.TextColumn("P(Winner)", help="Model's predicted probability for the actual winner"),
-                    "Result": st.column_config.TextColumn("Correct?", width="small"),
-                    "MSE": st.column_config.TextColumn("MSE Contrib", help="Contribution to overall MSE"),
+                    "P(Winner)": st.column_config.TextColumn(
+                        "P(Winner)",
+                        help="Model's predicted probability for the actual winner",
+                    ),
+                    "Result": st.column_config.TextColumn(
+                        "Correct?", width="small"),
+                    "MSE": st.column_config.TextColumn(
+                        "MSE Contrib",
+                        help="Contribution to overall MSE",
+                    ),
                 },
             )
 
     # ══════════════════════════════════════════════════════════════════════
-    # Side-by-side: Upcoming games & bracket preview
+    # Surprised / Nailed It cards
     # ══════════════════════════════════════════════════════════════════════
-    st.markdown("---")
-    c_left, c_right = st.columns([1, 1])
+    st.markdown("")
+    c_left, c_right = st.columns(2, gap="medium")
 
     with c_left:
-        st.subheader("� Surprised Us")
-        st.caption("Games where our model picked the wrong winner")
+        items_html = ""
         if not perf_df.empty:
             upsets = perf_df[perf_df["Correct"] == False].sort_values(
-                "P(Winner)", ascending=True
-            )
+                "P(Winner)", ascending=True)
             if upsets.empty:
-                st.success("All predictions correct so far! 🎯")
+                items_html = (
+                    '<div class="empty">All predictions correct so far! '
+                    '\U0001f3af</div>')
             else:
                 for _, row in upsets.head(5).iterrows():
                     p = row["P(Winner)"]
                     pstr = f"{p:.1%}" if pd.notna(p) else "?"
-                    st.write(
-                        f"**{row['Winner']}** beat {row['Loser']} "
-                        f"({row['Score']}) — our model gave them {pstr}"
+                    items_html += (
+                        f'<div class="item">\U0001f534 '
+                        f'<strong>{_esc(str(row["Winner"]))}</strong> beat '
+                        f'{_esc(str(row["Loser"]))} '
+                        f'({_esc(str(row["Score"]))}) '
+                        f'\u2014 we gave them {pstr}</div>'
                     )
         else:
-            st.caption("No results yet.")
+            items_html = '<div class="empty">No results yet</div>'
+        st.markdown(
+            '<div class="stat-card">'
+            '<h3>\U0001f534 Surprised Us</h3>'
+            '<div class="subtitle">Our model picked the wrong winner</div>'
+            f'{items_html}'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
     with c_right:
-        st.subheader("🟢 Nailed It")
-        st.caption("Games where our model correctly picked the winner")
+        items_html = ""
         if not perf_df.empty:
             best = perf_df[perf_df["Correct"] == True].sort_values(
-                "P(Winner)", ascending=False
-            )
+                "P(Winner)", ascending=False)
             if best.empty:
-                st.info("No correct predictions yet — early games are often the hardest to call.")
+                items_html = (
+                    '<div class="empty">No correct predictions yet '
+                    '\u2014 early rounds are the toughest</div>')
             else:
                 for _, row in best.head(5).iterrows():
                     p = row["P(Winner)"]
                     pstr = f"{p:.1%}" if pd.notna(p) else "?"
-                    st.write(
-                        f"**{row['Winner']}** beat {row['Loser']} "
-                        f"({row['Score']}) — predicted at {pstr}"
+                    items_html += (
+                        f'<div class="item">\U0001f7e2 '
+                        f'<strong>{_esc(str(row["Winner"]))}</strong> beat '
+                        f'{_esc(str(row["Loser"]))} '
+                        f'({_esc(str(row["Score"]))}) '
+                        f'\u2014 predicted at {pstr}</div>'
                     )
         else:
-            st.caption("No results yet.")
+            items_html = '<div class="empty">No results yet</div>'
+        st.markdown(
+            '<div class="stat-card">'
+            '<h3>\U0001f7e2 Nailed It</h3>'
+            '<div class="subtitle">Our model correctly picked the winner</div>'
+            f'{items_html}'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
     # ══════════════════════════════════════════════════════════════════════
-    # Navigation hints
+    # Navigation cards
     # ══════════════════════════════════════════════════════════════════════
-    st.markdown("---")
-    nav1, nav2 = st.columns(2)
+    st.markdown("")
+    nav1, nav2 = st.columns(2, gap="medium")
     with nav1:
-        st.info("**🏆 Bracket** — Build your bracket with our model's predictions", icon="👈")
+        st.markdown(
+            '<div class="nav-card">'
+            '<div class="icon">\U0001f3c6</div>'
+            '<div class="label">Bracket Predictor</div>'
+            '<div class="desc">Build your bracket with AI-powered '
+            'win probabilities</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
     with nav2:
-        st.info("**📝 Enter Results** — Add real game outcomes as they happen", icon="👈")
+        st.markdown(
+            '<div class="nav-card">'
+            '<div class="icon">\U0001f4dd</div>'
+            '<div class="label">Enter Results</div>'
+            '<div class="desc">Log real game outcomes to track '
+            'model accuracy</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
     st.caption("Use the sidebar to navigate between pages.")
 
 

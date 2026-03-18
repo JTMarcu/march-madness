@@ -19,9 +19,27 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 st.set_page_config(
     page_title="Bracket Predictor",
-    page_icon="🏆",
+    page_icon="\U0001f3c6",
     layout="wide",
 )
+
+# ── Shared dark theme ─────────────────────────────────────────────────────
+st.markdown("""
+<style>
+[data-testid="stAppViewContainer"] { background: linear-gradient(180deg, #0d1117 0%, #161b22 100%); color: #e6edf3; }
+[data-testid="stSidebar"] { background: #0d1117; border-right: 1px solid #30363d; }
+[data-testid="stHeader"] { background: transparent; }
+h1, h2, h3, h4 { color: #f0f6fc !important; }
+p, span, label, .stCaption, [data-testid="stCaptionContainer"] { color: #8b949e !important; }
+[data-testid="stMetric"] { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px 20px; }
+[data-testid="stMetricValue"] { color: #58a6ff !important; }
+[data-testid="stMetricLabel"] { color: #8b949e !important; }
+[data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0d1117; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+</style>
+""", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -104,22 +122,22 @@ def _team_box(x: float, y: float, name: str, seed: Optional[int],
               is_actual: bool = False) -> str:
     """Render one team box in SVG."""
     if name in ("TBD", None, ""):
-        fill, stroke, tfill = "#f0f0f0", "#ddd", "#bbb"
+        fill, stroke, tfill = "#21262d", "#30363d", "#484f58"
         weight, display = "normal", "TBD"
     elif is_winner and is_actual:
-        fill, stroke, tfill = "#fff3cd", "#ffc107", "#856404"
+        fill, stroke, tfill = "#2d2000", "#ffc107", "#ffd866"
         weight = "bold"
         display = f"{seed} {_trunc(name)}" if seed else _trunc(name)
     elif is_winner:
-        fill, stroke, tfill = "#c3e6cb", "#28a745", "#155724"
+        fill, stroke, tfill = "#0d2818", "#28a745", "#7ee787"
         weight = "bold"
         display = f"{seed} {_trunc(name)}" if seed else _trunc(name)
     elif is_actual and not is_winner:
-        fill, stroke, tfill = "#f8d7da", "#dc3545", "#721c24"
+        fill, stroke, tfill = "#2d0a0a", "#dc3545", "#f85149"
         weight = "normal"
         display = f"{seed} {_trunc(name)}" if seed else _trunc(name)
     else:
-        fill, stroke, tfill = "#fff", "#999", "#333"
+        fill, stroke, tfill = "#161b22", "#30363d", "#c9d1d9"
         weight = "normal"
         display = f"{seed} {_trunc(name)}" if seed else _trunc(name)
     display = _esc(display)
@@ -131,7 +149,7 @@ def _team_box(x: float, y: float, name: str, seed: Optional[int],
         f'font-family="Arial,sans-serif">{display}</text>\n'
     )
     if score is not None:
-        score_color = "#856404" if is_actual else "#666"
+        score_color = "#ffd866" if is_actual else "#8b949e"
         svg += (
             f'<text x="{x + BOX_W - 3}" y="{y + BOX_H - 5}" font-size="8" '
             f'fill="{score_color}" font-weight="{weight}" text-anchor="end" '
@@ -160,13 +178,13 @@ def _connector(x_edge: float, y1: float, y2: float,
     mx = x_edge + CONN_W / 2 if direction == "right" else x_edge - CONN_W / 2
     return (
         f'<line x1="{x_edge}" y1="{y1}" x2="{mx}" y2="{y1}" '
-        f'stroke="#999" stroke-width="1"/>\n'
+        f'stroke="#30363d" stroke-width="1"/>\n'
         f'<line x1="{x_edge}" y1="{y2}" x2="{mx}" y2="{y2}" '
-        f'stroke="#999" stroke-width="1"/>\n'
+        f'stroke="#30363d" stroke-width="1"/>\n'
         f'<line x1="{mx}" y1="{y1}" x2="{mx}" y2="{y2}" '
-        f'stroke="#999" stroke-width="1"/>\n'
+        f'stroke="#30363d" stroke-width="1"/>\n'
         f'<line x1="{mx}" y1="{ym}" x2="{x_next}" y2="{ym}" '
-        f'stroke="#999" stroke-width="1"/>\n'
+        f'stroke="#30363d" stroke-width="1"/>\n'
     )
 
 
@@ -260,16 +278,16 @@ def render_bracket_svg(sim: BracketSimulator,
         cx = LEFT_X[i] + BOX_W / 2
         parts.append(
             f'<text x="{cx}" y="{hy}" text-anchor="middle" font-size="7" '
-            f'fill="#888" font-family="Arial">{lbl}</text>\n')
+            f'fill="#484f58" font-family="Arial">{lbl}</text>\n')
     parts.append(
         f'<text x="{CH_X + BOX_W / 2}" y="{hy}" text-anchor="middle" '
-        f'font-size="7" fill="#c0392b" font-weight="bold" '
+        f'font-size="7" fill="#f85149" font-weight="bold" '
         f'font-family="Arial">CHAMPION</text>\n')
     for i, lbl in enumerate(HEADERS_R):
         cx = RIGHT_X[i] + BOX_W / 2
         parts.append(
             f'<text x="{cx}" y="{hy}" text-anchor="middle" font-size="7" '
-            f'fill="#888" font-family="Arial">{lbl}</text>\n')
+            f'fill="#484f58" font-family="Arial">{lbl}</text>\n')
 
     # Region labels
     for reg, ystart, anchor, xref in [
@@ -280,7 +298,7 @@ def render_bracket_svg(sim: BracketSimulator,
     ]:
         parts.append(
             f'<text x="{xref}" y="{ystart - 2}" text-anchor="{anchor}" '
-            f'font-size="8" fill="#555" font-weight="bold" '
+            f'font-size="8" fill="#8b949e" font-weight="bold" '
             f'font-family="Arial">{REGION_NAMES.get(reg, reg)}</text>\n')
 
     def _draw_round(region, order, centers, col_x,
@@ -346,10 +364,10 @@ def render_bracket_svg(sim: BracketSimulator,
     ch_y = (ff_l_y + ff_r_y) / 2
     parts.append(
         f'<line x1="{LEFT_X[4] + BOX_W}" y1="{ff_l_y}" '
-        f'x2="{CH_X}" y2="{ch_y}" stroke="#999" stroke-width="1"/>\n')
+        f'x2="{CH_X}" y2="{ch_y}" stroke="#30363d" stroke-width="1"/>\n')
     parts.append(
         f'<line x1="{RIGHT_X[0]}" y1="{ff_r_y}" '
-        f'x2="{CH_X + BOX_W}" y2="{ch_y}" stroke="#999" stroke-width="1"/>\n')
+        f'x2="{CH_X + BOX_W}" y2="{ch_y}" stroke="#30363d" stroke-width="1"/>\n')
 
     ch_slots = sim.slots[sim.slots["Slot"].str.startswith("R6")]
     if len(ch_slots) > 0:
@@ -361,15 +379,15 @@ def render_bracket_svg(sim: BracketSimulator,
                 cname = _esc(predictor.team_name(champ))
                 parts.append(
                     f'<text x="{CH_X + BOX_W / 2}" y="{ch_y + GAME_H / 2 + 15}" '
-                    f'text-anchor="middle" font-size="10" fill="#c0392b" '
+                    f'text-anchor="middle" font-size="10" fill="#f85149" '
                     f'font-weight="bold" font-family="Arial">'
                     f'🏆 {cname}</text>\n')
 
     svg = (
         f'<svg viewBox="0 0 {SVG_W} {SVG_H}" '
         f'xmlns="http://www.w3.org/2000/svg" '
-        f'style="width:100%;height:auto;background:#fafafa;'
-        f'border:1px solid #eee;border-radius:8px;">\n'
+        f'style="width:100%;height:auto;background:#0d1117;'
+        f'border:1px solid #30363d;border-radius:12px;">\n'
         f'{"".join(parts)}'
         f'</svg>'
     )
@@ -621,12 +639,12 @@ def main():
 
     # SVG legend
     st.markdown(
-        '<div style="font-size:12px;margin-bottom:8px;">'
+        '<div style="font-size:12px;margin-bottom:8px;color:#c9d1d9;">'
         '<b>Legend:</b> '
-        '<span style="background:#fff3cd;border:1px solid #ffc107;padding:2px 6px;border-radius:3px;">🏀 Actual Result</span> '
-        '<span style="background:#c3e6cb;border:1px solid #28a745;padding:2px 6px;border-radius:3px;">Predicted Winner</span> '
-        '<span style="background:#f8d7da;border:1px solid #dc3545;padding:2px 6px;border-radius:3px;">Actual Loser</span> '
-        '<span style="color:#888;margin-left:8px;">Scores in brackets are model-predicted scores</span>'
+        '<span style="background:#2d2000;border:1px solid #ffc107;color:#ffd866;padding:2px 6px;border-radius:3px;">\U0001f3c0 Actual Result</span> '
+        '<span style="background:#0d2818;border:1px solid #28a745;color:#7ee787;padding:2px 6px;border-radius:3px;">Predicted Winner</span> '
+        '<span style="background:#2d0a0a;border:1px solid #dc3545;color:#f85149;padding:2px 6px;border-radius:3px;">Actual Loser</span> '
+        '<span style="color:#8b949e;margin-left:8px;">Scores in brackets are model-predicted scores</span>'
         '</div>',
         unsafe_allow_html=True,
     )

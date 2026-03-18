@@ -59,9 +59,34 @@ def _readable_game_label(slot: str, s_name: str, w_name: str) -> str:
 
 st.set_page_config(
     page_title="Enter Results",
-    page_icon="📝",
+    page_icon="\U0001f4dd",
     layout="wide",
 )
+
+# ── Dark theme CSS ──────────────────────────────────────────────────
+st.markdown("""
+<style>
+    /* Dark background */
+    .stApp { background: linear-gradient(135deg, #0d1117 0%, #161b22 100%); }
+    header[data-testid="stHeader"] { background: transparent !important; }
+    /* Sidebar */
+    section[data-testid="stSidebar"] { background: #0d1117 !important; border-right: 1px solid #30363d; }
+    section[data-testid="stSidebar"] .stMarkdown { color: #c9d1d9; }
+    /* Typography */
+    h1, h2, h3, h4 { color: #f0f6fc !important; }
+    .stMarkdown p, .stMarkdown li { color: #c9d1d9; }
+    /* Form / inputs */
+    .stForm { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1.2rem; }
+    /* Buttons */
+    .stButton > button[kind="primary"] { background: #238636 !important; border-color: #2ea043 !important; }
+    /* Metric colours */
+    [data-testid="stMetricValue"] { color: #58a6ff !important; }
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0d1117; }
+    ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+</style>
+""", unsafe_allow_html=True)
 
 
 @st.cache_resource
