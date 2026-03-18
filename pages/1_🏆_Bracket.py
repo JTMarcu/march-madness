@@ -658,7 +658,7 @@ def main():
         sd = sim.seeds.copy()
         sd["Team"] = sd["TeamID"].apply(active_predictor.team_name)
         sd = sd[["Seed", "Team", "TeamID"]].sort_values("Seed")
-        st.dataframe(sd, hide_index=True, width='stretch')
+        st.dataframe(sd, hide_index=True, use_container_width=True)
 
     # SVG legend
     st.markdown(
