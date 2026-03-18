@@ -11,7 +11,7 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from src.bracket import BracketPredictor, REGION_NAMES
+from src.bracket import BracketPredictor, REGION_NAMES, MODEL_REGISTRY
 from src.results import (
     load_results,
     build_performance_table,
@@ -136,27 +136,21 @@ def main():
     gender = st.sidebar.radio("Tournament", ["Men's", "Women's"], key="dash_gender")
     gender_code = "M" if gender == "Men's" else "W"
 
-    sub_files = sorted(OUTPUT_DIR.glob("submission*.csv"))
-    sub_names = [f.name for f in sub_files]
-    default_idx = (
-        sub_names.index("submission_refined.csv")
-        if "submission_refined.csv" in sub_names else 0
+    model_names = [m["name"] for m in MODEL_REGISTRY]
+    selected_model = st.sidebar.selectbox(
+        "Model",
+        range(len(MODEL_REGISTRY)),
+        format_func=lambda i: model_names[i],
+        help="Which model's predictions to evaluate against actual results",
     )
-    selected_sub = st.sidebar.selectbox(
-        "Submission to evaluate",
-        sub_names,
-        index=default_idx,
-        help="Which submission CSV to compare against actual results",
-    )
-    sub_path = OUTPUT_DIR / selected_sub
+    sel = MODEL_REGISTRY[selected_model]
+    sub_path = OUTPUT_DIR / sel["file"]
 
-    cfg = predictor.config
-    feat_str = ", ".join(f.replace("Diff_", "") for f in predictor.features)
     with st.sidebar.expander("\U0001f916 Model Info", expanded=False):
-        st.write(f"**Type:** Split M/W {cfg.get('model_type', 'logreg').upper()}")
-        st.write(f"**Features:** {feat_str}")
-        st.write(f"**Training:** {cfg['n_men_games']}M + {cfg['n_women_games']}W games")
-        st.write(f"**Clipping:** [{cfg['clip_range'][0]}, {cfg['clip_range'][1]}]")
+        st.markdown(sel["description"])
+        st.write(f"**Type:** {sel['model']}")
+        st.write(f"**Split:** {sel['split']}")
+        st.write(f"**Features:** {sel['features']}")
 
     # ── Load actual results & build perf table ────────────────────────────
     results_data = load_results()
@@ -171,7 +165,7 @@ def main():
     # KPI metrics
     # ══════════════════════════════════════════════════════════════════════
     st.markdown(f"### \U0001f4ca {gender} Tournament")
-    st.caption(f"Last updated: {last_updated} \u00b7 Evaluating: {selected_sub}")
+    st.caption(f"Last updated: {last_updated} \u00b7 Evaluating: {sel['name']}")
 
     if actual_count == 0:
         st.markdown(

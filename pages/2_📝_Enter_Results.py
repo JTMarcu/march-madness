@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.bracket import BracketPredictor, BracketSimulator, REGION_NAMES
+from src.bracket import BracketPredictor, BracketSimulator, REGION_NAMES, MODEL_REGISTRY
 from src.results import (
     load_results,
     add_result,
@@ -63,28 +63,22 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── Dark theme CSS ──────────────────────────────────────────────────
+# ── Shared dark theme ─────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Dark background */
-    .stApp { background: linear-gradient(135deg, #0d1117 0%, #161b22 100%); }
-    header[data-testid="stHeader"] { background: transparent !important; }
-    /* Sidebar */
-    section[data-testid="stSidebar"] { background: #0d1117 !important; border-right: 1px solid #30363d; }
-    section[data-testid="stSidebar"] .stMarkdown { color: #c9d1d9; }
-    /* Typography */
-    h1, h2, h3, h4 { color: #f0f6fc !important; }
-    .stMarkdown p, .stMarkdown li { color: #c9d1d9; }
-    /* Form / inputs */
-    .stForm { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1.2rem; }
-    /* Buttons */
-    .stButton > button[kind="primary"] { background: #238636 !important; border-color: #2ea043 !important; }
-    /* Metric colours */
-    [data-testid="stMetricValue"] { color: #58a6ff !important; }
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: #0d1117; }
-    ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+[data-testid="stAppViewContainer"] { background: linear-gradient(180deg, #0d1117 0%, #161b22 100%); color: #e6edf3; }
+[data-testid="stSidebar"] { background: #0d1117; border-right: 1px solid #30363d; }
+[data-testid="stHeader"] { background: transparent; }
+h1, h2, h3, h4 { color: #f0f6fc !important; }
+p, span, label, .stCaption, [data-testid="stCaptionContainer"] { color: #8b949e !important; }
+[data-testid="stMetric"] { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px 20px; }
+[data-testid="stMetricValue"] { color: #58a6ff !important; }
+[data-testid="stMetricLabel"] { color: #8b949e !important; }
+[data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
+.stForm { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1.2rem; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0d1117; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -108,6 +102,17 @@ def main():
     st.sidebar.header("Settings")
     gender = st.sidebar.radio("Tournament", ["Men's", "Women's"], key="res_gender")
     gender_code = "M" if gender == "Men's" else "W"
+
+    model_names = [m["name"] for m in MODEL_REGISTRY]
+    selected_model = st.sidebar.selectbox(
+        "Model (for predictions)",
+        range(len(MODEL_REGISTRY)),
+        format_func=lambda i: model_names[i],
+        key="res_model",
+        help="Which model's predictions to show next to results",
+    )
+    sel = MODEL_REGISTRY[selected_model]
+    sub_path = OUTPUT_DIR / sel["file"]
 
     # Load current results
     results_data = load_results()
@@ -229,12 +234,11 @@ def main():
                 loser = info.get("loser_name", "?")
                 score = info.get("score", "")
                 st.write(
-                    f"**{round_name}** ({slot}): "
+                    f"**{round_name}**: "
                     f"**{winner}** def. {loser} ({score})"
                 )
             with c2:
                 # Show our prediction
-                sub_path = OUTPUT_DIR / "submission_refined.csv"
                 if sub_path.exists():
                     from src.results import get_prediction_for_matchup
                     w_id = info.get("winner_id")

@@ -12,75 +12,14 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.bracket import BracketPredictor, BracketSimulator, SubmissionPredictor, ROUND_NAMES, REGION_NAMES
+from src.bracket import (
+    BracketPredictor, BracketSimulator, SubmissionPredictor,
+    ROUND_NAMES, REGION_NAMES, MODEL_REGISTRY,
+)
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
-
-# ── Model Registry ────────────────────────────────────────────────────────
-MODEL_REGISTRY = [
-    {
-        "id": "sub1_split_lr6",
-        "name": "\u2b50 Split LR \u2014 6 Features (Primary)",
-        "file": "sub1_split_lr6.csv",
-        "description": (
-            "**Our top model.** Separate logistic regressions for men\u2019s "
-            "and women\u2019s tournaments. Uses all 6 engineered features."
-        ),
-        "model": "Logistic Regression (C=1.0)",
-        "split": "Separate M/W",
-        "features": "seed, PointDiff, OffEff, WinPct, quality, Elo",
-    },
-    {
-        "id": "sub2_split_lr4",
-        "name": "Split LR \u2014 4 Features",
-        "file": "sub2_split_lr4.csv",
-        "description": (
-            "Leaner variant that drops Elo and GLM quality, relying on the "
-            "four strongest box-score-derived signals only."
-        ),
-        "model": "Logistic Regression (C=1.0)",
-        "split": "Separate M/W",
-        "features": "seed, PointDiff, OffEff, WinPct",
-    },
-    {
-        "id": "sub3_split_xgb6",
-        "name": "Split XGBoost \u2014 6 Features",
-        "file": "sub3_split_xgb6.csv",
-        "description": (
-            "Gradient-boosted trees with heavy regularization to test whether "
-            "non-linear feature interactions add predictive power."
-        ),
-        "model": "XGBClassifier (depth=2, n=200, \u03b3=5)",
-        "split": "Separate M/W",
-        "features": "seed, PointDiff, OffEff, WinPct, quality, Elo",
-    },
-    {
-        "id": "sub4_ensemble_lr_xgb",
-        "name": "Ensemble (LR + XGB average)",
-        "file": "sub4_ensemble_lr_xgb.csv",
-        "description": (
-            "Simple 50/50 average of the Split LR and Split XGBoost "
-            "predictions. Hedges model risk through diversity."
-        ),
-        "model": "Average of LR + XGB",
-        "split": "Separate M/W (inherited)",
-        "features": "seed, PointDiff, OffEff, WinPct, quality, Elo",
-    },
-    {
-        "id": "sub5_combined_lr6",
-        "name": "Combined LR \u2014 6 Features",
-        "file": "sub5_combined_lr6.csv",
-        "description": (
-            "One logistic regression trained on both men\u2019s and women\u2019s "
-            "data together. Tests whether splitting M/W actually helps."
-        ),
-        "model": "Logistic Regression (C=1.0)",
-        "split": "Combined M+W",
-        "features": "seed, PointDiff, OffEff, WinPct, quality, Elo",
-    },
-]
 
 st.set_page_config(
     page_title="Bracket Predictor",
@@ -655,7 +594,6 @@ def main():
     # ── Model selector ────────────────────────────────────────────────
     st.sidebar.markdown("---")
     st.sidebar.subheader("\U0001f9e0 Model")
-    model_names = [m["name"] for m in MODEL_REGISTRY]
     selected_idx = st.sidebar.selectbox(
         "Choose a model",
         range(len(MODEL_REGISTRY)),
@@ -736,6 +674,7 @@ def main():
 
     # Bracket SVG
     st.markdown(f"### {season} NCAA {gender} Tournament Bracket")
+    st.caption(f"Model: {sel['name']}")
     bracket_placeholder = st.empty()
 
     st.markdown("---")
